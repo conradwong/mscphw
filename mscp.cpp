@@ -1,9 +1,12 @@
+<<<<<<< HEAD
 // BOWEN HUANG     FEI YU
 // ECS 40
 // ASSIGNMENT #2
 // convrt chess program to c++ 
 
 
+=======
+>>>>>>> fy/master
 /*----------------------------------------------------------------------+
  |                                                                      |
  |              mscp.cpp- Marcel's Simple Chess Program (c++)                  |
@@ -1078,13 +1081,21 @@ static int parse_move(char *line, int *num)
         if (!strncmp(line+n, "o-o-o", 5)
         ||  !strncmp(line+n, "O-O-O", 5)
         ||  !strncmp(line+n, "0-0-0", 5)) {
+<<<<<<< HEAD
                 piece = (char*)("K"); fr_file = (char*)("e"); to_file = (char*)("c");
+=======
+                piece = "K"; fr_file = "e"; to_file = "c";
+>>>>>>> fy/master
                 n+=5;
         }
         else if (!strncmp(line+n, "o-o", 3)
         ||  !strncmp(line+n, "O-O", 3)
         ||  !strncmp(line+n, "0-0", 3)) {
+<<<<<<< HEAD
                 piece = (char*)("K"); fr_file = (char*)("e"); to_file = (char*)("g");
+=======
+                piece = "K"; fr_file = "e"; to_file = "g";
+>>>>>>> fy/master
                 n+=3;
         }
         else {
@@ -1289,7 +1300,11 @@ static int book_move(void)
 {
         int move = 0, sum = 0;
         long x = 0, y, m;
+<<<<<<< HEAD
         char *seperator = (char*)"book:";
+=======
+        char *seperator = "book:";
+>>>>>>> fy/master
         unsigned long hash;
 
         if (!booksize) return 0;
@@ -1301,7 +1316,11 @@ static int book_move(void)
         }
         while (BOOK[x].hash == hash) {
                 printf("%s (%d)", seperator, BOOK[x].count);
+<<<<<<< HEAD
                 seperator = (char*)",";
+=======
+                seperator = ",";
+>>>>>>> fy/master
                 print_move_san(BOOK[x].move);
                 compute_hash();
 
@@ -1903,8 +1922,13 @@ static void cmd_set_depth(char *s)
 
 static void cmd_new(char *dummy)
 {
+<<<<<<< HEAD
         setup_board((char*)("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -"));
         load_book((char*)("book.txt"));
+=======
+        setup_board("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -");
+        load_book("book.txt");
+>>>>>>> fy/master
         computer[0] = 0;
         computer[1] = 1;
         rnd_seed = time(NULL);
@@ -1928,6 +1952,7 @@ static void cmd_quit(char *dummy)
 static void cmd_help(char *dummy);//forward declaration
 //struct command mscp_commands[32]; /* forward declaration */
 struct command mscp_commands[] = {
+<<<<<<< HEAD
  { (char*)("help"),      cmd_help,       (char*)("show this list of commands")            },
  { (char*)("bd"),        cmd_bd,         (char*)("display board")                         },
  { (char*)("ls"),        cmd_list_moves, (char*)("list moves")                            },
@@ -1946,6 +1971,26 @@ struct command mscp_commands[] = {
  { (char*)("xboard"),    cmd_xboard,     (char*)("switch to xboard mode")                 },
  { (char*)("fen"),       cmd_fen,        (char*)("setup new position")                    },
  {          NULL,        cmd_default,    (char*)("enter moves in algebraic notation")     },
+=======
+ { "help",      cmd_help,       "show this list of commands"            },
+ { "bd",        cmd_bd,         "display board"                         },
+ { "ls",        cmd_list_moves, "list moves"                            },
+ { "new",       cmd_new,        "new game"                              },
+ { "go",        cmd_go,         "computer starts playing"               },
+ { "test",      cmd_test,       "search (depth)"                        },
+ { "quit",      cmd_quit,       "leave chess program"                   },
+ { "sd",        cmd_set_depth,  "set maximum search depth (plies)"      },
+ { "both",      cmd_both,       "computer plays both sides"             },
+ { "force",     cmd_force,      "computer plays neither side"           },
+ { "white",     cmd_white,      "set computer to play white"            },
+ { "black",     cmd_black,      "set computer to play black"            },
+ { "book",      cmd_book,       "lookup current position in book"       },
+ { "undo",      cmd_undo,       "undo move"                             },
+ { "quit",      cmd_quit,       "leave chess program"                   },
+ { "xboard",    cmd_xboard,     "switch to xboard mode"                 },
+ { "fen",       cmd_fen,        "setup new position"                    },
+ { NULL,        cmd_default,    "enter moves in algebraic notation"     },
+>>>>>>> fy/master
 };
 static void cmd_help(char *dummy)
 {
@@ -1982,7 +2027,11 @@ static char startup_message[] =
 
 int main(void)
 {
+<<<<<<< HEAD
         int unsigned i;
+=======
+        int i;
+>>>>>>> fy/master
         int cmd;
         char line[128];
         char name[128];
@@ -1991,7 +2040,11 @@ printf("############");
         puts(startup_message);
         signal(SIGINT, catch_sigint);
 
+<<<<<<< HEAD
         for (i=0; i<sizeof((zobrist)); i++) {
+=======
+        for (i=0; i<sizeof(zobrist); i++) {
+>>>>>>> fy/master
                 ( (byte*)zobrist )[i] = rnd() & 0xff;
         }
 
