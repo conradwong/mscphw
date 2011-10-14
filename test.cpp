@@ -1,20 +1,15 @@
-
 /*----------------------------------------------------------------------+
- |                                                                      |
- |              mscp.c - Marcel's Simple Chess Program                  |
- |                                                                      |
- +----------------------------------------------------------------------+
- |
- | Author:      Marcel van Kervinck <marcelk@bitpit.net>
- | Creation:    11-Jun-1998
- | Last update: 14-Dec-2003
- | Description: Simple chess playing program
- |
- +----------------------------------------------------------------------+
- |    Copyright (C)1998-2003 Marcel van Kervinck                        |
- |    This program is distributed under the GNU General Public License. |
- |    See file COPYING or http://bitpit.net/mscp/ for details.          |
- +----------------------------------------------------------------------*/
+| |
+| mscp.cpp- Marcel's Simple Chess Program (c++) |
+| |
++----------------------------------------------------------------------+
+|
+| Author:
+| Creation: 10/08/2011
+| Last update: 10/09/2011
+| Description: Simple chess playing program
+|
++-----------------------------------------------------------------------*/
 
 char mscp_c_rcsid[] = "@(#)$Id: mscp.c,v 1.18 2003/12/14 15:12:12 marcelk Exp $";
 
@@ -26,6 +21,9 @@ char mscp_c_rcsid[] = "@(#)$Id: mscp.c,v 1.18 2003/12/14 15:12:12 marcelk Exp $"
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
+#include <iostream>
+#include <fstream> //For puts();
+using namespace std;
 
 typedef unsigned char byte;
 #define INF 32000
@@ -36,10 +34,10 @@ typedef unsigned char byte;
 #define xisalpha(c) isalpha((int)(c))
 
 /*----------------------------------------------------------------------+
- |      data structures                                                 |
- +----------------------------------------------------------------------*/
+| data structures |
++----------------------------------------------------------------------*/
 
-enum {                  /* 64 squares */
+enum { /* 64 squares */
         A1, A2, A3, A4, A5, A6, A7, A8,
         B1, B2, B3, B4, B5, B6, B7, B8,
         C1, C2, C3, C4, C5, C6, C7, C8,
@@ -48,19 +46,19 @@ enum {                  /* 64 squares */
         F1, F2, F3, F4, F5, F6, F7, F8,
         G1, G2, G3, G4, G5, G6, G7, G8,
         H1, H2, H3, H4, H5, H6, H7, H8,
-        CASTLE,         /* Castling rights */
-        EP,             /* En-passant square */
-        LAST            /* Ply number of last capture or pawn push */
+        CASTLE, /* Castling rights */
+        EP, /* En-passant square */
+        LAST /* Ply number of last capture or pawn push */
 };
 static byte board[64+3]; /* Board state */
 
-static int ply;         /* Number of half-moves made in game and search */
-#define WTM (~ply & 1)  /* White-to-move predicate */
+static int ply; /* Number of half-moves made in game and search */
+#define WTM (~ply & 1) /* White-to-move predicate */
 
 static byte castle[64]; /* Which pieces may participate in castling */
-#define CASTLE_WHITE_KING  1
+#define CASTLE_WHITE_KING 1
 #define CASTLE_WHITE_QUEEN 2
-#define CASTLE_BLACK_KING  4
+#define CASTLE_BLACK_KING 4
 #define CASTLE_BLACK_QUEEN 8
 
 static int computer[2]; /* Which side is played by the computer */
@@ -68,24 +66,24 @@ static int xboard_mode; /* XBoard protocol, surpresses prompt */
 
 static unsigned long nodes; /* Node counter */
 
-struct side {           /* Attacks */
+struct side { /* Attacks */
         byte attack[64];
         int king;
         byte pawns[10];
 };
-static struct side white, black, *friend, *enemy;
+static struct side white, black, *friends, *enemy;
 
 static unsigned short history[64*64]; /* History-move heuristic counters */
 
-static signed char undo_stack[6*1024], *undo_sp; /* Move undo administration */
+static signed char undo_stack[6*1024], *undo_sp; /* move undo administration */
 static unsigned long hash_stack[1024]; /* History of hashes, for repetition */
 
-static int maxdepth = 4;                /* Maximum search depth */
+static int maxdepth = 4; /* Maximum search depth */
 
 /* Constants for static move ordering (pre-scores) */
-#define PRESCORE_EQUAL       (10U<<9)
-#define PRESCORE_HASHMOVE    (3U<<14)
-#define PRESCORE_KILLERMOVE  (2U<<14)
+#define PRESCORE_EQUAL (10U<<9)
+#define PRESCORE_HASHMOVE (3U<<14)
+#define PRESCORE_KILLERMOVE (2U<<14)
 #define PRESCORE_COUNTERMOVE (1U<<14)
 
 static const int prescore_piece_value[] = {
@@ -94,47 +92,72 @@ static const int prescore_piece_value[] = {
         0, 9<<9, 5<<9, 3<<9, 3<<9, 1<<9,
 };
 
-struct move {
+struct Move {
         short move;
         unsigned short prescore;
 };
 
-static struct move move_stack[1024], *move_sp; /* History of moves */
+static struct Move move_stack[1024], *move_sp; /* History of moves */
 
-static int piece_square[12][64];        /* Position evaluation tables */
-static unsigned long zobrist[12][64];   /* Hash-key construction */
+static int piece_square[12][64]; /* Position evaluation tables */
+static unsigned long zobrist[12][64]; /* Hash-key construction */
 
 /*
- *  CORE is the number of entries in the opening book or transposition table.
- *  It must be power of two. MSCP is very simple and optimized for 4 ply,
- *  so I don't want to waste space on a large table. This also makes MSCP
- *  fit well on 8bit machines.
- */
+* CORE is the number of entries in the opening book or transposition table.
+* It must be power of two. MSCP is very simple and optimized for 4 ply,
+* so I don't want to waste space on a large table. This also makes MSCP
+* fit well on 8bit machines.
+*/
 #define CORE (2048)
-static long booksize;                   /* Number of opening book entries */
+static long booksize; /* Number of opening book entries */
 
 /* Transposition table and opening book share the same memory */
-static union {
-        struct tt {                     /* Transposition table entry */
-                unsigned short hash;    /* - Identifies position */ 
-                short move;             /* - Best recorded move */
-                short score;            /* - Score */
-                char flag;              /* - How to interpret score */
-                char depth;             /* - Remaining search depth */
-        } tt[CORE];
-        struct bk {                     /* Opening book entry */
-                unsigned long hash;     /* - Identifies position */
-                short move;             /* - Move for this position */
-                unsigned short count;   /* - Frequency */
-        } bk[CORE];
-} core;
-
+static union TTBK{
+        struct _tt { /* Transposition table entry */
+                unsigned short hash; /* - Identifies position */
+                short move; /* - Best recorded move */
+                short score; /* - Score */
+                char flag; /* - How to interpret score */
+                char depth; /* - Remaining search depth */
+        }tt[CORE];
+        struct _bk { /* Opening book entry */
+                unsigned long hash; /* - Identifies position */
+                short move; /* - move for this position */
+                unsigned short count; /* - Frequency */
+        }bk[CORE];
+}core;
+//static TTBK core;
+//static TTBK::_tt tt[CORE];
+//static TTBK::_bk bk[CORE];
+//static union float4
+//{
+// struct RGBA{
+// float r;
+// float g;
+// float b;
+// float a;
+// }rgba[2];
+// struct XYZW{
+// float x;
+// float y;
+// float z;
+// float w;
+// }xyzw[2];
+//}rgbxyz;
+//
+//void foo(){
+// TTBK::_tt t;
+//
+// float4::RGBA color;
+// //color.x = 1.0f;//color.r=1.0f;
+// color.r = 22.0f;
+//}
 #define TTABLE (core.tt)
 #define BOOK (core.bk)
 
 /*----------------------------------------------------------------------+
- |      chess defines                                                   |
- +----------------------------------------------------------------------*/
+| chess defines |
++----------------------------------------------------------------------*/
 
 enum {
         EMPTY,
@@ -145,26 +168,26 @@ enum {
 };
 #define PIECE_COLOR(pc) ((pc) < BLACK_KING) /* White or black */
 
-#define DIR_N (+1)              /* Offset to step one square up (north) */
-#define DIR_E (+8)              /* Offset to step one square right (east) */
+#define DIR_N (+1) /* Offset to step one square up (north) */
+#define DIR_E (+8) /* Offset to step one square right (east) */
 
 enum { FILE_A, FILE_B, FILE_C, FILE_D, FILE_E, FILE_F, FILE_G, FILE_H };
 enum { RANK_1, RANK_2, RANK_3, RANK_4, RANK_5, RANK_6, RANK_7, RANK_8 };
 
-#define RANK2CHAR(r)            ('1'+(r))               /* rank to text */
-#define CHAR2RANK(c)            ((c)-'1')               /* text to rank */
-#define FILE2CHAR(f)            ('a'+(f))               /* file to text */
-#define CHAR2FILE(c)            ((c)-'a')               /* text to file */
-#define PIECE2CHAR(p)           ("-KQRBNPkqrbnp"[p])    /* piece to text */
+#define RANK2CHAR(r) ('1'+(r)) /* rank to text */
+#define CHAR2RANK(c) ((c)-'1') /* text to rank */
+#define FILE2CHAR(f) ('a'+(f)) /* file to text */
+#define CHAR2FILE(c) ((c)-'a') /* text to file */
+#define PIECE2CHAR(p) ("-KQRBNPkqrbnp"[p]) /* piece to text */
 
-#define F(square)               ((square) >> 3)         /* file */
-#define R(square)               ((square) & 7)          /* rank */
-#define SQ(f,r)                 (((f) << 3) | (r))      /* compose square */
-#define FLIP(square)            ((square)^7)            /* flip board */
-#define MOVE(fr,to)             (((fr) << 6) | (to))    /* compose move */
-#define FR(move)                (((move) & 07700) >> 6) /* from square */
-#define TO(move)                ((move) & 00077)        /* target square */
-#define SPECIAL                 (1<<12)                 /* for special moves */
+#define F(square) ((square) >> 3) /* file */
+#define R(square) ((square) & 7) /* rank */
+#define SQ(f,r) (((f) << 3) | (r)) /* compose square */
+#define FLIP(square) ((square)^7) /* flip board */
+#define MOVE(fr,to) (((fr) << 6) | (to)) /* compose move */
+#define FR(move) (((move) & 07700) >> 6) /* from square */
+#define TO(move) ((move) & 00077) /* target square */
+#define SPECIAL (1<<12) /* for special moves */
 
 struct command {
         char *name;
@@ -173,36 +196,36 @@ struct command {
 };
 
 /* attacks */
-#define ATKB_NORTH              0
-#define ATKB_NORTHEAST          1
-#define ATKB_EAST               2
-#define ATKB_SOUTHEAST          3
-#define ATKB_SOUTH              4
-#define ATKB_SOUTHWEST          5
-#define ATKB_WEST               6
-#define ATKB_NORTHWEST          7
+#define ATKB_NORTH 0
+#define ATKB_NORTHEAST 1
+#define ATKB_EAST 2
+#define ATKB_SOUTHEAST 3
+#define ATKB_SOUTH 4
+#define ATKB_SOUTHWEST 5
+#define ATKB_WEST 6
+#define ATKB_NORTHWEST 7
 
-#define ATK_NORTH               (1 << ATKB_NORTH)
-#define ATK_NORTHEAST           (1 << ATKB_NORTHEAST)
-#define ATK_EAST                (1 << ATKB_EAST)
-#define ATK_SOUTHEAST           (1 << ATKB_SOUTHEAST)
-#define ATK_SOUTH               (1 << ATKB_SOUTH)
-#define ATK_SOUTHWEST           (1 << ATKB_SOUTHWEST)
-#define ATK_WEST                (1 << ATKB_WEST)
-#define ATK_NORTHWEST           (1 << ATKB_NORTHWEST)
+#define ATK_NORTH (1 << ATKB_NORTH)
+#define ATK_NORTHEAST (1 << ATKB_NORTHEAST)
+#define ATK_EAST (1 << ATKB_EAST)
+#define ATK_SOUTHEAST (1 << ATKB_SOUTHEAST)
+#define ATK_SOUTH (1 << ATKB_SOUTH)
+#define ATK_SOUTHWEST (1 << ATKB_SOUTHWEST)
+#define ATK_WEST (1 << ATKB_WEST)
+#define ATK_NORTHWEST (1 << ATKB_NORTHWEST)
 
-#define ATK_ORTHOGONAL          ( ATK_NORTH | ATK_SOUTH | \
-                                  ATK_WEST  | ATK_EAST  )
-#define ATK_DIAGONAL            ( ATK_NORTHEAST | ATK_NORTHWEST | \
-                                  ATK_SOUTHEAST | ATK_SOUTHWEST )
-#define ATK_SLIDER              ( ATK_ORTHOGONAL | ATK_DIAGONAL )
+#define ATK_ORTHOGONAL ( ATK_NORTH | ATK_SOUTH | \
+ATK_WEST | ATK_EAST )
+#define ATK_DIAGONAL ( ATK_NORTHEAST | ATK_NORTHWEST | \
+ATK_SOUTHEAST | ATK_SOUTHWEST )
+#define ATK_SLIDER ( ATK_ORTHOGONAL | ATK_DIAGONAL )
 
-static signed char king_step[129];      /* Offsets for king moves */
-static signed char knight_jump[129];    /* Offsets for knight jumps */ 
+static signed char king_step[129]; /* Offsets for king moves */
+static signed char knight_jump[129]; /* Offsets for knight jumps */
 
 /* 8 bits per square representing which directions a king can walk to */
 static const byte king_dirs[64] = {
-          7,  31,  31,  31,  31,  31,  31,  28,
+          7, 31, 31, 31, 31, 31, 31, 28,
         199, 255, 255, 255, 255, 255, 255, 124,
         199, 255, 255, 255, 255, 255, 255, 124,
         199, 255, 255, 255, 255, 255, 255, 124,
@@ -214,8 +237,8 @@ static const byte king_dirs[64] = {
 
 /* 8 bits per square representing which directions a knight can jump to */
 static const byte knight_dirs[64] = {
-         6,  14,  46,  46,  46,  46,  44,  40,
-         7,  15,  63,  63,  63,  63,  60,  56,
+         6, 14, 46, 46, 46, 46, 44, 40,
+         7, 15, 63, 63, 63, 63, 60, 56,
         71, 207, 255, 255, 255, 255, 252, 184,
         71, 207, 255, 255, 255, 255, 252, 184,
         71, 207, 255, 255, 255, 255, 252, 184,
@@ -225,8 +248,8 @@ static const byte knight_dirs[64] = {
 };
 
 /*----------------------------------------------------------------------+
- |      simple random generator                                         |
- +----------------------------------------------------------------------*/
+| simple random generator |
++----------------------------------------------------------------------*/
 
 static long rnd_seed = 1;
 
@@ -241,8 +264,8 @@ static long rnd(void)
 }
 
 /*----------------------------------------------------------------------+
- |      I/O functions                                                   |
- +----------------------------------------------------------------------*/
+| I/O functions |
++----------------------------------------------------------------------*/
 
 static void print_square(int square)
 {
@@ -256,7 +279,7 @@ static void print_move_long(int move)
         print_square(TO(move));
         if (move >= SPECIAL) {
                 if ((board[FR(move)] == WHITE_PAWN && R(TO(move)) == RANK_8)
-                ||  (board[FR(move)] == BLACK_PAWN && R(TO(move)) == RANK_1)) {
+                || (board[FR(move)] == BLACK_PAWN && R(TO(move)) == RANK_1)) {
                         putchar('=');
                         putchar("QRBN"[move >> 13]);
                 }
@@ -275,7 +298,7 @@ static void print_board(void)
                 }
                 putchar('\n');
         }
-        printf("   a b c d e f g h\n%d. %s to move. %s%s%s%s ",
+        printf(" a b c d e f g h\n%d. %s to move. %s%s%s%s ",
                 1+ply/2, WTM ? "White" : "Black",
                 board[CASTLE] & CASTLE_WHITE_KING ? "K" : "",
                 board[CASTLE] & CASTLE_WHITE_QUEEN ? "Q" : "",
@@ -312,11 +335,11 @@ static int readline(char *line, int size, FILE *fp)
 }
 
 /*----------------------------------------------------------------------+
- |      transposition tables                                            |
- +----------------------------------------------------------------------*/
+| transposition tables |
++----------------------------------------------------------------------*/
 
 /* Compute 32-bit Zobrist hash key. Normally 32 bits this is too small,
-   but for MSCP's small searches it is OK */
+but for MSCP's small searches it is OK */
 static unsigned long compute_hash(void)
 {
         unsigned long hash = 0;
@@ -331,8 +354,8 @@ static unsigned long compute_hash(void)
 }
 
 /*----------------------------------------------------------------------+
- |      position                                                        |
- +----------------------------------------------------------------------*/
+| position |
++----------------------------------------------------------------------*/
 
 static void reset(void)
 {
@@ -405,8 +428,8 @@ static void setup_board(char *fen)
 }
 
 /*----------------------------------------------------------------------+
- |      attack tables                                                   |
- +----------------------------------------------------------------------*/
+| attack tables |
++----------------------------------------------------------------------*/
 
 static void atk_slide(int sq, byte dirs, struct side *s)
 {
@@ -434,7 +457,7 @@ static void compute_attacks(void)
         memset(&white, 0, sizeof white);
         memset(&black, 0, sizeof black);
 
-        friend = WTM ? &white : &black;
+        friends = WTM ? &white : &black;
         enemy = WTM ? &black : &white;
 
         for (sq=0; sq<64; sq++) {
@@ -536,8 +559,8 @@ static void compute_attacks(void)
 }
 
 /*----------------------------------------------------------------------+
- |      make/unmake move                                                |
- +----------------------------------------------------------------------*/
+| make/unmake move |
++----------------------------------------------------------------------*/
 
 static void unmake_move(void)
 {
@@ -545,7 +568,7 @@ static void unmake_move(void)
 
         for (;;) {
                 sq = *--undo_sp;
-                if (sq < 0) break;               /* Found sentinel */
+                if (sq < 0) break; /* Found sentinel */
                 board[sq] = *--undo_sp;
         }
         ply--;
@@ -557,9 +580,9 @@ static void make_move(int move)
         int to;
         int sq;
 
-        *undo_sp++ = -1;                        /* Place sentinel */
+        *undo_sp++ = -1; /* Place sentinel */
 
-        if (board[EP]) {                        /* Clear en-passant info */
+        if (board[EP]) { /* Clear en-passant info */
                 *undo_sp++ = board[EP];
                 *undo_sp++ = EP;
                 board[EP] = 0;
@@ -568,9 +591,9 @@ static void make_move(int move)
         to = TO(move);
         fr = FR(move);
 
-        if (move & SPECIAL) {                   /* Special moves first */
+        if (move & SPECIAL) { /* Special moves first */
                 switch (R(fr)) {
-                case RANK_8:                    /* Black castles */
+                case RANK_8: /* Black castles */
                         unmake_move();
                         if (to == G8) {
                                 make_move(MOVE(H8,F8));
@@ -584,15 +607,15 @@ static void make_move(int move)
                                 *undo_sp++ = 0;
                                 *undo_sp++ = EP;
                                 board[EP] = to;
-                        } else {                /* White promotes */
+                        } else { /* White promotes */
                                 *undo_sp++ = board[fr];
                                 *undo_sp++ = fr;
                                 board[fr] = WHITE_QUEEN + (move>>13);
                         }
                         break;
 
-                case RANK_5:                    /* White captures en-passant */
-                case RANK_4:                    /* Black captures en-passant */
+                case RANK_5: /* White captures en-passant */
+                case RANK_4: /* Black captures en-passant */
                         sq = SQ(F(to),R(fr));
                         *undo_sp++ = board[sq];
                         *undo_sp++ = sq;
@@ -604,14 +627,14 @@ static void make_move(int move)
                                 *undo_sp++ = 0;
                                 *undo_sp++ = EP;
                                 board[EP] = to;
-                        } else {                /* Black promotes */
+                        } else { /* Black promotes */
                                 *undo_sp++ = board[fr];
                                 *undo_sp++ = fr;
                                 board[fr] = BLACK_QUEEN + (move>>13);
                         }
                         break;
 
-                case RANK_1:                    /* White castles */
+                case RANK_1: /* White castles */
                         unmake_move();
                         if (to == G1) {
                                 make_move(MOVE(H1,F1));
@@ -650,11 +673,11 @@ static void make_move(int move)
 }
 
 /*----------------------------------------------------------------------+
- |      move generator                                                  |
- +----------------------------------------------------------------------*/
+| move generator |
++----------------------------------------------------------------------*/
 
 /* XXX Dirty hack. Used to signal normal move generation or
-   generation of good captures only */
+generation of good captures only */
 static unsigned short caps;
 
 static int push_move(int fr, int to)
@@ -701,12 +724,12 @@ static void push_special_move(int fr, int to)
 static void push_pawn_move(int fr, int to)
 {
         if ((R(to) == RANK_8) || (R(to) == RANK_1)) {
-                push_special_move(fr, to);          /* queen promotion */
-                push_special_move(fr, to);          /* rook promotion */
+                push_special_move(fr, to); /* queen promotion */
+                push_special_move(fr, to); /* rook promotion */
                 move_sp[-1].move += 1<<13;
-                push_special_move(fr, to);          /* bishop promotion */
+                push_special_move(fr, to); /* bishop promotion */
                 move_sp[-1].move += 2<<13;
-                push_special_move(fr, to);          /* knight promotion */
+                push_special_move(fr, to); /* knight promotion */
                 move_sp[-1].move += 3<<13;
         } else {
                 push_move(fr, to);
@@ -740,8 +763,8 @@ static void gen_slides(int fr, byte dirs)
 
 static int cmp_move(const void *ap, const void *bp)
 {
-        const struct move *a = ap;
-        const struct move *b = bp;
+        struct Move *a = (Move*)ap;
+        struct Move *b = (Move*)bp;
 
         if (a->prescore < b->prescore) return -1;
         if (a->prescore > b->prescore) return 1;
@@ -753,14 +776,14 @@ static int test_illegal(int move)
         make_move(move);
         compute_attacks();
         unmake_move();
-        return friend->attack[enemy->king] != 0;
+        return friends->attack[enemy->king] != 0;
 }
 
 static void generate_moves(unsigned treshold)
 {
-        int             fr, to;
-        int             pc;
-        byte            dir, dirs;
+        int fr, to;
+        int pc;
+        byte dir, dirs;
 
         caps = treshold;
 
@@ -769,8 +792,8 @@ static void generate_moves(unsigned treshold)
                 if (!pc || PIECE_COLOR(pc) != WTM) continue;
 
                 /*
-                 *  generate moves for this piece
-                 */
+* generate moves for this piece
+*/
                 switch (pc) {
                 case WHITE_KING:
                 case BLACK_KING:
@@ -876,9 +899,9 @@ static void generate_moves(unsigned treshold)
         }
 
         /*
-         *  generate castling moves
-         */
-        if (board[CASTLE] && !enemy->attack[friend->king]) {
+* generate castling moves
+*/
+        if (board[CASTLE] && !enemy->attack[friends->king]) {
                 if (WTM && (board[CASTLE] & CASTLE_WHITE_KING) &&
                         !board[F1] && !board[G1] &&
                         !enemy->attack[F1])
@@ -906,8 +929,8 @@ static void generate_moves(unsigned treshold)
         }
 
         /*
-         *  generate en-passant captures
-         */
+* generate en-passant captures
+*/
         if (board[EP]) {
                 int ep = board[EP];
 
@@ -937,7 +960,7 @@ static void print_move_san(int move)
 {
         int fr, to;
         int filex = 0, rankx = 0;
-        struct move *moves;
+        struct Move *moves;
 
         fr = FR(move);
         to = TO(move);
@@ -953,15 +976,15 @@ static void print_move_san(int move)
 
         if ((board[fr]==WHITE_PAWN) || (board[fr] == BLACK_PAWN)) {
                 /*
-                 *  pawn moves are a bit special
-                 */
+* pawn moves are a bit special
+*/
                 if (F(fr) != F(to)) {
                         printf("%cx", FILE2CHAR(F(fr)));
                 }
                 print_square(to);
                 /*
-                 *  promote to piece (=Q, =R, =B, =N)
-                 */
+* promote to piece (=Q, =R, =B, =N)
+*/
                 if (move > 4095
                 && (R(to)==RANK_1 || R(to)==RANK_8)) {
                         putchar('=');
@@ -971,54 +994,54 @@ static void print_move_san(int move)
         }
 
         /*
-         *  piece identifier (K, Q, R, B, N)
-         */
+* piece identifier (K, Q, R, B, N)
+*/
         putchar(toupper(PIECE2CHAR(board[fr])));
 
         /*
-         *  disambiguate: consider moves of identical pieces to the same square
-         */
+* disambiguate: consider moves of identical pieces to the same square
+*/
         moves = move_sp;
         generate_moves(0);
         while (move_sp > moves) {
                 move_sp--;
-                if (to != TO(move_sp->move)             /* same destination */
-                ||  move == move_sp->move               /* different move */
-                ||  board[fr] != board[FR(move_sp->move)] /* same piece */
-                ||  test_illegal(move_sp->move)) {
+                if (to != TO(move_sp->move) /* same destination */
+                || move == move_sp->move /* different move */
+                || board[fr] != board[FR(move_sp->move)] /* same piece */
+                || test_illegal((int)move_sp->move)) {
                         continue;
                 }
                 rankx |= (R(fr) == R(FR(move_sp->move))) + 1;
-                filex |=  F(fr) == F(FR(move_sp->move));
+                filex |= F(fr) == F(FR(move_sp->move));
         }
         if (rankx != filex) putchar(FILE2CHAR(F(fr)));
         if (filex) putchar(RANK2CHAR(R(fr)));
 
         /*
-         *  capture sign
-         */
+* capture sign
+*/
         if (board[to] != EMPTY) putchar('x');
 
         /*
-         *  to-square
-         */
+* to-square
+*/
         print_square(to);
 
         /*
-         *  check ('+') or checkmate ('#')
-         */
+* check ('+') or checkmate ('#')
+*/
 check:
         make_move(move);
         compute_attacks();
-        if (enemy->attack[friend->king]) {      /* in check, is mate? */
+        if (enemy->attack[friends->king]) { /* in check, is mate? */
                 int sign = '#';
                 moves = move_sp;
                 generate_moves(0);
                 while (move_sp > moves) {
                         move_sp--;
-                        if (!test_illegal(move_sp->move)) {
+                        if (!test_illegal((int)move_sp->move)) {
                                 sign = '+';
-                                move_sp = moves;        /* break */
+                                move_sp = moves; /* break */
                         }
                 }
                 putchar(sign);
@@ -1027,39 +1050,39 @@ check:
 }
 
 /*----------------------------------------------------------------------+
- |      move parser                                                     |
- +----------------------------------------------------------------------*/
+| move parser |
++----------------------------------------------------------------------*/
 
 static int parse_move(char *line, int *num)
 {
-        int                     move, matches;
-        int                     n = 0;
-        struct move             *m;
-        char                    *piece = NULL;
-        char                    *fr_file = NULL;
-        char                    *fr_rank = NULL;
-        char                    *to_file = NULL;
-        char                    *to_rank = NULL;
-        char                    *prom_piece = NULL;
-        char                    *s;
+        int move, matches;
+        int n = 0;
+        struct Move *m;
+        char *piece = NULL;
+        char *fr_file = NULL;
+        char *fr_rank = NULL;
+        char *to_file = NULL;
+        char *to_rank = NULL;
+        char *prom_piece = NULL;
+        char *s;
 
-        while (xisspace(line[n]))      /* skip white space */
+        while (xisspace(line[n])) /* skip white space */
                 n++;
 
         if (!strncmp(line+n, "o-o-o", 5)
-        ||  !strncmp(line+n, "O-O-O", 5)
-        ||  !strncmp(line+n, "0-0-0", 5)) {
+        || !strncmp(line+n, "O-O-O", 5)
+        || !strncmp(line+n, "0-0-0", 5)) {
                 piece = "K"; fr_file = "e"; to_file = "c";
                 n+=5;
         }
         else if (!strncmp(line+n, "o-o", 3)
-        ||  !strncmp(line+n, "O-O", 3)
-        ||  !strncmp(line+n, "0-0", 3)) {
+        || !strncmp(line+n, "O-O", 3)
+        || !strncmp(line+n, "0-0", 3)) {
                 piece = "K"; fr_file = "e"; to_file = "g";
                 n+=3;
         }
         else {
-                s = strchr("KQRBNP", line[n]);
+                s = strchr(const_cast<char*>("KQRBNP"), line[n]);
                 if (s && *s) {
                         piece = s;
                         n++;
@@ -1067,13 +1090,13 @@ static int parse_move(char *line, int *num)
 
                 /* first square */
 
-                s = strchr("abcdefgh", line[n]);
+                s = strchr(const_cast<char*>("abcdefgh"), line[n]);
                 if (s && *s) {
                         to_file = s;
                         n++;
                 }
 
-                s = strchr("12345678", line[n]);
+                s = strchr(const_cast<char*>("12345678"), line[n]);
                 if (s && *s) {
                         to_rank = s;
                         n++;
@@ -1083,7 +1106,7 @@ static int parse_move(char *line, int *num)
                         n++;
                 }
 
-                s = strchr("abcdefgh", line[n]);
+                s = strchr(const_cast<char*>("abcdefgh"), line[n]);
                 if (s && *s) {
                         fr_file = to_file;
                         fr_rank = to_rank;
@@ -1092,7 +1115,7 @@ static int parse_move(char *line, int *num)
                         n++;
                 }
 
-                s = strchr("12345678", line[n]);
+                s = strchr(const_cast<char*>("12345678"), line[n]);
                 if (s && *s) {
                         to_rank = s;
                         n++;
@@ -1101,7 +1124,7 @@ static int parse_move(char *line, int *num)
                 if (line[n] == '=') {
                         n++;
                 }
-                s = strchr("QRBNqrbn", line[n]);
+                s = strchr(const_cast<char*>("QRBNqrbn"), line[n]);
                 if (s && *s) {
                         prom_piece = s;
                         n++;
@@ -1146,7 +1169,7 @@ static int parse_move(char *line, int *num)
                 }
 
                 /* if so, is it legal? */
-                if (test_illegal(move_sp->move)) {
+                if (test_illegal((int)move_sp->move)) {
                         continue;
                 }
                 /* probably.. */
@@ -1161,7 +1184,7 @@ static int parse_move(char *line, int *num)
                                 return 0;
                         }
                         /* if this move is a pawn move and the previously
-                           found isn't, we accept it */
+found isn't, we accept it */
                         old_is_p = (board[FR(move)]==WHITE_PAWN) ||
                                 (board[FR(move)]==BLACK_PAWN);
                         new_is_p = (board[fr]==WHITE_PAWN) ||
@@ -1171,9 +1194,9 @@ static int parse_move(char *line, int *num)
                                 move = move_sp->move;
                                 matches = 1;
                         } else if (old_is_p && !new_is_p) {
-                        } else if (!old_is_p && !new_is_p)  {
+                        } else if (!old_is_p && !new_is_p) {
                                 matches++;
-                        } else if (old_is_p && new_is_p)  {
+                        } else if (old_is_p && new_is_p) {
                                 puts("ambiguous!"); print_board(); puts(line);
                                 move_sp = m;
                                 return 0;
@@ -1191,14 +1214,14 @@ static int parse_move(char *line, int *num)
 }
 
 /*----------------------------------------------------------------------+
- |      opening book                                                    |
- +----------------------------------------------------------------------*/
+| opening book |
++----------------------------------------------------------------------*/
 
 static int cmp_bk(const void *ap, const void *bp)
 {
-        const struct bk *a = ap;
-        const struct bk *b = bp;
-
+        const TTBK::_bk *a = (const TTBK::_bk*)ap;
+        const TTBK::_bk *b = (const TTBK::_bk*)bp;
+        // struct ttbk
         if (a->hash < b->hash) return -1;
         if (a->hash > b->hash) return 1;
         return (int)a->move - (int)b->move;
@@ -1223,16 +1246,16 @@ static void compact_book(void)
 
 static void load_book(char *filename)
 {
-        FILE                    *fp;
-        char                    line[128], *s;
-        int                     num, move;
+        FILE *fp;
+        char line[128], *s;
+        int num, move;
 
         booksize = 0;
 
         fp = fopen(filename, "r");
         if (!fp) {
                 printf("no opening book: %s\n", filename);
-                exit(EXIT_FAILURE);     /* no mercy */
+                exit(EXIT_FAILURE); /* no mercy */
         }
         while (readline(line, sizeof(line), fp) >= 0) {
                 s = line;
@@ -1287,29 +1310,29 @@ static int book_move(void)
 }
 
 /*----------------------------------------------------------------------+
- |      evaluator                                                       |
- +----------------------------------------------------------------------*/
+| evaluator |
++----------------------------------------------------------------------*/
 
 static int center[64] = {
-         0,  2,  3,  4,  4,  3,  2,  0,
-         2,  3,  4,  5,  5,  4,  3,  2,
-         3,  4,  5,  7,  7,  5,  4,  3,
-         4,  5,  7, 10, 10,  7,  5,  4,
-         4,  5,  7, 10, 10,  7,  5,  4,
-         3,  4,  5,  7,  7,  5,  4,  3,
-         2,  3,  4,  5,  5,  4,  3,  2,
-         0,  2,  3,  4,  4,  3,  2,  0,
+         0, 2, 3, 4, 4, 3, 2, 0,
+         2, 3, 4, 5, 5, 4, 3, 2,
+         3, 4, 5, 7, 7, 5, 4, 3,
+         4, 5, 7, 10, 10, 7, 5, 4,
+         4, 5, 7, 10, 10, 7, 5, 4,
+         3, 4, 5, 7, 7, 5, 4, 3,
+         2, 3, 4, 5, 5, 4, 3, 2,
+         0, 2, 3, 4, 4, 3, 2, 0,
 };
 
 static int pawn_advance[64] = {
-        0,  0, 2, 3, 5, 30, 50, 0,
-        0,  0, 2, 3, 5, 30, 50, 0,
-        0,  0, 2, 3, 5, 30, 50, 0,
+        0, 0, 2, 3, 5, 30, 50, 0,
+        0, 0, 2, 3, 5, 30, 50, 0,
+        0, 0, 2, 3, 5, 30, 50, 0,
         0, -5, 2, 8, 8, 30, 50, 0,
         0, -5, 2, 8, 8, 30, 50, 0,
-        0,  0, 2, 3, 5, 30, 50, 0,
-        0,  0, 2, 3, 5, 30, 50, 0,
-        0,  0, 2, 3, 5, 30, 50, 0,
+        0, 0, 2, 3, 5, 30, 50, 0,
+        0, 0, 2, 3, 5, 30, 50, 0,
+        0, 0, 2, 3, 5, 30, 50, 0,
 };
 
 #define DIFF(a,b) ((a)>(b) ? (a)-(b) : (b)-(a))
@@ -1401,14 +1424,14 @@ static void compute_piece_square_tables(void)
 }
 
 static int white_control[64] = {
-          1,  1,  1,  1,  2,  2,  2,  2,
-          1,  1,  1,  1,  2,  2,  2,  2,
-          1,  1,  2,  2,  3,  3,  2,  2,
-          1,  1,  2,  5,  6,  3,  2,  2,
-          1,  1,  2,  5,  6,  3,  2,  2,
-          1,  1,  2,  2,  3,  3,  2,  2,
-          1,  1,  1,  1,  2,  2,  2,  2,
-          1,  1,  1,  1,  2,  2,  2,  2,
+          1, 1, 1, 1, 2, 2, 2, 2,
+          1, 1, 1, 1, 2, 2, 2, 2,
+          1, 1, 2, 2, 3, 3, 2, 2,
+          1, 1, 2, 5, 6, 3, 2, 2,
+          1, 1, 2, 5, 6, 3, 2, 2,
+          1, 1, 2, 2, 3, 3, 2, 2,
+          1, 1, 1, 1, 2, 2, 2, 2,
+          1, 1, 1, 1, 2, 2, 2, 2,
 };
 
 static int evaluate(void)
@@ -1419,8 +1442,8 @@ static int evaluate(void)
         int white_has, black_has;
 
         /*
-         *  stage 1: material+piece_square tables
-         */
+* stage 1: material+piece_square tables
+*/
         for (sq=0; sq<64; sq++) {
                 int file;
 
@@ -1475,8 +1498,8 @@ static int evaluate(void)
         }
 
         /*
-         *  stage 2: board control
-         */
+* stage 2: board control
+*/
         white_has = 0;
         black_has = 0;
         for (sq=0; sq<64; sq++) {
@@ -1496,14 +1519,14 @@ static int evaluate(void)
 }
 
 /*----------------------------------------------------------------------+
- |      search                                                          |
- +----------------------------------------------------------------------*/
+| search |
++----------------------------------------------------------------------*/
 
 static int qsearch(int alpha, int beta)
 {
-        int                             best_score;
-        int                             score;
-        struct move                     *moves;
+        int best_score;
+        int score;
+        struct Move *moves;
 
         nodes++;
 
@@ -1524,7 +1547,7 @@ static int qsearch(int alpha, int beta)
                 make_move(move);
 
                 compute_attacks();
-                if (friend->attack[enemy->king]) {
+                if (friends->attack[enemy->king]) {
                         unmake_move();
                         continue;
                 }
@@ -1553,15 +1576,15 @@ static int qsearch(int alpha, int beta)
 
 static int search(int depth, int alpha, int beta)
 {
-        int                             best_score = -INF;
-        int                             best_move = 0;
-        int                             score;
-        struct move                     *moves;
-        int                             incheck = 0;
-        struct tt                       *tt;
-        int                             oldalpha = alpha;
-        int                             oldbeta = beta;
-        int                             i, count=0;
+        int best_score = -INF;
+        int best_move = 0;
+        int score;
+        struct Move *moves;
+        int incheck = 0;
+        struct TTBK::_tt *tt;
+        int oldalpha = alpha;
+        int oldbeta = beta;
+        int i, count=0;
 
         nodes++;
 
@@ -1573,24 +1596,24 @@ static int search(int depth, int alpha, int beta)
         }
 
         /*
-         *  check transposition table
-         */
+* check transposition table
+*/
         tt = &TTABLE[ ((hash_stack[ply]>>16) & (CORE-1)) ];
         if (tt->hash == (hash_stack[ply] & 0xffffU)) {
                 if (tt->depth >= depth) {
                         if (tt->flag >= 0) alpha = MAX(alpha, tt->score);
-                        if (tt->flag <= 0) beta = MIN(beta,  tt->score);
+                        if (tt->flag <= 0) beta = MIN(beta, tt->score);
                         if (alpha >= beta) return tt->score;
                 }
                 best_move = tt->move & 07777;
         }
 
         history[best_move] |= PRESCORE_HASHMOVE;
-        incheck = enemy->attack[friend->king];
+        incheck = enemy->attack[friends->king];
 
         /*
-         *  generate moves
-         */
+* generate moves
+*/
         moves = move_sp;
         generate_moves(0);
 
@@ -1600,8 +1623,8 @@ static int search(int depth, int alpha, int beta)
         qsort(moves, move_sp - moves, sizeof(*moves), cmp_move);
 
         /*
-         *  loop over all moves
-         */
+* loop over all moves
+*/
         while (move_sp > moves) {
                 int newdepth;
                 int move;
@@ -1609,7 +1632,7 @@ static int search(int depth, int alpha, int beta)
                 move = move_sp->move;
                 make_move(move);
                 compute_attacks();
-                if (friend->attack[enemy->king]) {
+                if (friends->attack[enemy->king]) {
                         unmake_move();
                         continue;
                 }
@@ -1620,7 +1643,7 @@ static int search(int depth, int alpha, int beta)
                 } else {
                         score = -search(newdepth, -beta, -alpha);
                 }
-                if (score < -29000) score++;    /* adjust for mate-in-n */
+                if (score < -29000) score++; /* adjust for mate-in-n */
 
                 unmake_move();
 
@@ -1648,7 +1671,7 @@ static int search(int depth, int alpha, int beta)
         if (history[best_move & 07777] > 511) {
                 int m;
                 for (m=0; m<SPECIAL; m++) {
-                        history[m] >>= 4;       /* scaling */
+                        history[m] >>= 4; /* scaling */
                 }
         }
 
@@ -1675,18 +1698,18 @@ static unsigned short squeeze(unsigned long n)
 
 static int root_search(int maxdepth)
 {
-        int             depth;
-        int             score, best_score;
-        int             move = 0;
-        int             alpha, beta;
-        unsigned long   node;
-        struct move     *m;
+        int depth;
+        int score, best_score;
+        int move = 0;
+        int alpha, beta;
+        unsigned long node;
+        struct Move *m;
 
         nodes = 0;
         compute_piece_square_tables();
 
         generate_moves(0);
-        qsort(move_stack, move_sp-move_stack, sizeof(struct move), cmp_move);
+        qsort(move_stack, move_sp-move_stack, sizeof(struct Move), cmp_move);
 
         alpha = -INF;
         beta = +INF;
@@ -1698,9 +1721,9 @@ static int root_search(int maxdepth)
 
                 node = nodes;
                 while (m < move_sp) {
-                        make_move(m->move);
+                        make_move((int)m->move);
                         compute_attacks();
-                        if (friend->attack[enemy->king] != 0) { /* illegal? */
+                        if (friends->attack[enemy->king] != 0) { /* illegal? */
                                 unmake_move();
                                 *m = *--move_sp; /* drop this move */
                                 continue;
@@ -1723,7 +1746,7 @@ static int root_search(int maxdepth)
                         node = nodes;
 
                         if (score > best_score) {
-                                struct move tmp;
+                                struct Move tmp;
 
                                 best_score = score;
                                 alpha = score;
@@ -1747,7 +1770,7 @@ static int root_search(int maxdepth)
 
                 /* sort remaining moves in descending order of subtree size */
                 qsort(move_stack+1, move_sp-move_stack-1, sizeof(*m), cmp_move);
-                alpha = best_score - 33;        /* aspiration window */
+                alpha = best_score - 33; /* aspiration window */
                 beta = best_score + 33;
         }
         move_sp = move_stack;
@@ -1755,8 +1778,8 @@ static int root_search(int maxdepth)
 }
 
 /*----------------------------------------------------------------------+
- |      commands                                                        |
- +----------------------------------------------------------------------*/
+| commands |
++----------------------------------------------------------------------*/
 
 static void cmd_bd(char *dummy /* @unused */)
 {
@@ -1778,7 +1801,7 @@ static void cmd_book(char *dummy)
 
 static void cmd_list_moves(char *dummy)
 {
-        struct move *m;
+        struct Move *m;
         int nmoves = 0;
 
         puts("moves are:");
@@ -1790,8 +1813,8 @@ static void cmd_list_moves(char *dummy)
 
         while (move_sp > m) {
                 --move_sp;
-                if (test_illegal(move_sp->move)) continue;
-                print_move_san(move_sp->move);
+                if (test_illegal((int)move_sp->move)) continue;
+                print_move_san((int)move_sp->move);
                 putchar('\n');
                 nmoves++;
         }
@@ -1896,9 +1919,28 @@ static void cmd_quit(char *dummy)
 {
         exit(0);
 }
-
-struct command mscp_commands[]; /* forward declaration */
-
+static void cmd_help(char *dummy);//forward declaration
+//struct command mscp_commands[32]; /* forward declaration */
+struct command mscp_commands[] = {
+ { "help", cmd_help, "show this list of commands" },
+ { "bd", cmd_bd, "display board" },
+ { "ls", cmd_list_moves, "list moves" },
+ { "new", cmd_new, "new game" },
+ { "go", cmd_go, "computer starts playing" },
+ { "test", cmd_test, "search (depth)" },
+ { "quit", cmd_quit, "leave chess program" },
+ { "sd", cmd_set_depth, "set maximum search depth (plies)" },
+ { "both", cmd_both, "computer plays both sides" },
+ { "force", cmd_force, "computer plays neither side" },
+ { "white", cmd_white, "set computer to play white" },
+ { "black", cmd_black, "set computer to play black" },
+ { "book", cmd_book, "lookup current position in book" },
+ { "undo", cmd_undo, "undo move" },
+ { "quit", cmd_quit, "leave chess program" },
+ { "xboard", cmd_xboard, "switch to xboard mode" },
+ { "fen", cmd_fen, "setup new position" },
+ { NULL, cmd_default, "enter moves in algebraic notation" },
+};
 static void cmd_help(char *dummy)
 {
         struct command *c;
@@ -1909,31 +1951,9 @@ static void cmd_help(char *dummy)
                 printf("%-8s - %s\n", c->name ? c->name : "", c->help);
         } while (c++->name != NULL);
 }
-
-struct command mscp_commands[] = {
- { "help",      cmd_help,       "show this list of commands"            },
- { "bd",        cmd_bd,         "display board"                         },
- { "ls",        cmd_list_moves, "list moves"                            },
- { "new",       cmd_new,        "new game"                              },
- { "go",        cmd_go,         "computer starts playing"               },
- { "test",      cmd_test,       "search (depth)"                        },
- { "quit",      cmd_quit,       "leave chess program"                   },
- { "sd",        cmd_set_depth,  "set maximum search depth (plies)"      },
- { "both",      cmd_both,       "computer plays both sides"             },
- { "force",     cmd_force,      "computer plays neither side"           },
- { "white",     cmd_white,      "set computer to play white"            },
- { "black",     cmd_black,      "set computer to play black"            },
- { "book",      cmd_book,       "lookup current position in book"       },
- { "undo",      cmd_undo,       "undo move"                             },
- { "quit",      cmd_quit,       "leave chess program"                   },
- { "xboard",    cmd_xboard,     "switch to xboard mode"                 },
- { "fen",       cmd_fen,        "setup new position"                    },
- { NULL,        cmd_default,    "enter moves in algebraic notation"     },
-};
-
 /*----------------------------------------------------------------------+
- |      main                                                            |
- +----------------------------------------------------------------------*/
+| main |
++----------------------------------------------------------------------*/
 
 static void catch_sigint(int s)
 {
@@ -1941,9 +1961,13 @@ static void catch_sigint(int s)
 }
 
 static char startup_message[] =
+
+       "\n"
+        "This is modified program of MSCP 1.4 (Marcel's Simple Chess Program)\n"
+        "Previous MSCP 1.4 built by Marcel van Kervinck was wirtten in C.\n"
+        "The mscp.cpp written in C++ is built by .\n"
         "\n"
-        "This is MSCP 1.4 (Marcel's Simple Chess Program)\n"
-        "\n"
+        "Copyright of MSCP 1.4 (Marcel's Simple Chess Program)\n"
         "Copyright (C)1998-2003 Marcel van Kervinck\n"
         "This program is distributed under the GNU General Public License.\n"
         "(See file COPYING or http://combinational.com/mscp/ for details.)\n"
@@ -1957,7 +1981,7 @@ int main(void)
         char line[128];
         char name[128];
         int move;
-
+printf("############");
         puts(startup_message);
         signal(SIGINT, catch_sigint);
 
@@ -2021,7 +2045,7 @@ int main(void)
                         if (!move || ply >= 1000) {
                                 printf("game over: ");
                                 compute_attacks();
-                                if (!move && enemy->attack[friend->king] != 0) {
+                                if (!move && enemy->attack[friends->king] != 0) {
                                         puts(WTM ? "0-1" : "1-0");
                                 } else {
                                         puts("1/2-1/2");
@@ -2043,6 +2067,12 @@ int main(void)
 }
 
 /*----------------------------------------------------------------------+
- |                                                                      |
- +----------------------------------------------------------------------*/
+| |
++----------------------------------------------------------------------*/
+
+
+
+
+
+
 
