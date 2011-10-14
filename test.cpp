@@ -1,15 +1,20 @@
+
 /*----------------------------------------------------------------------+
  |                                                                      |
- |              mscp.cpp- Marcel's Simple Chess Program (c++)                  |
+ |              mscp.c - Marcel's Simple Chess Program                  |
  |                                                                      |
  +----------------------------------------------------------------------+
  |
- | Author:
- | Creation:    10/08/2011
- | Last update: 10/09/2011
+ | Author:      Marcel van Kervinck <marcelk@bitpit.net>
+ | Creation:    11-Jun-1998
+ | Last update: 14-Dec-2003
  | Description: Simple chess playing program
  |
- +-----------------------------------------------------------------------*/
+ +----------------------------------------------------------------------+
+ |    Copyright (C)1998-2003 Marcel van Kervinck                        |
+ |    This program is distributed under the GNU General Public License. |
+ |    See file COPYING or http://bitpit.net/mscp/ for details.          |
+ +----------------------------------------------------------------------*/
 
 char mscp_c_rcsid[] = "@(#)$Id: mscp.c,v 1.18 2003/12/14 15:12:12 marcelk Exp $";
 
@@ -21,9 +26,6 @@ char mscp_c_rcsid[] = "@(#)$Id: mscp.c,v 1.18 2003/12/14 15:12:12 marcelk Exp $"
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
-#include <iostream>
-#include <fstream> //For puts();
-using namespace std;
 
 typedef unsigned char byte;
 #define INF 32000
@@ -71,11 +73,11 @@ struct side {           /* Attacks */
         int king;
         byte pawns[10];
 };
-static struct side white, black, *friends, *enemy;
+static struct side white, black, *friend, *enemy;
 
 static unsigned short history[64*64]; /* History-move heuristic counters */
 
-static signed char undo_stack[6*1024], *undo_sp; /* move undo administration */
+static signed char undo_stack[6*1024], *undo_sp; /* Move undo administration */
 static unsigned long hash_stack[1024]; /* History of hashes, for repetition */
 
 static int maxdepth = 4;                /* Maximum search depth */
@@ -92,12 +94,12 @@ static const int prescore_piece_value[] = {
         0, 9<<9, 5<<9, 3<<9, 3<<9, 1<<9,
 };
 
-struct Move {
+struct move {
         short move;
         unsigned short prescore;
 };
 
-static struct Move move_stack[1024], *move_sp; /* History of moves */
+static struct move move_stack[1024], *move_sp; /* History of moves */
 
 static int piece_square[12][64];        /* Position evaluation tables */
 static unsigned long zobrist[12][64];   /* Hash-key construction */
@@ -112,46 +114,21 @@ static unsigned long zobrist[12][64];   /* Hash-key construction */
 static long booksize;                   /* Number of opening book entries */
 
 /* Transposition table and opening book share the same memory */
-static union TTBK{
-        struct _tt {                     /* Transposition table entry */
-                unsigned short hash;    /* - Identifies position */
+static union {
+        struct tt {                     /* Transposition table entry */
+                unsigned short hash;    /* - Identifies position */ 
                 short move;             /* - Best recorded move */
                 short score;            /* - Score */
                 char flag;              /* - How to interpret score */
                 char depth;             /* - Remaining search depth */
-        }tt[CORE];
-        struct _bk {                     /* Opening book entry */
+        } tt[CORE];
+        struct bk {                     /* Opening book entry */
                 unsigned long hash;     /* - Identifies position */
-                short move;             /* - move for this position */
+                short move;             /* - Move for this position */
                 unsigned short count;   /* - Frequency */
-        }bk[CORE];
-}core;
-//static TTBK core;
-//static TTBK::_tt tt[CORE];
-//static TTBK::_bk bk[CORE];
-//static union float4
-//{
-//	struct RGBA{
-//		float r;
-//		float g;
-//		float b;
-//		float a;
-//	}rgba[2];
-//	struct XYZW{
-//		float x;
-//		float y;
-//		float z;
-//		float w;
-//	}xyzw[2];
-//}rgbxyz;
-//
-//void foo(){
-//	TTBK::_tt t;
-//
-//	float4::RGBA color;
-//	//color.x = 1.0f;//color.r=1.0f;
-//	color.r = 22.0f;
-//}
+        } bk[CORE];
+} core;
+
 #define TTABLE (core.tt)
 #define BOOK (core.bk)
 
@@ -221,7 +198,7 @@ struct command {
 #define ATK_SLIDER              ( ATK_ORTHOGONAL | ATK_DIAGONAL )
 
 static signed char king_step[129];      /* Offsets for king moves */
-static signed char knight_jump[129];    /* Offsets for knight jumps */
+static signed char knight_jump[129];    /* Offsets for knight jumps */ 
 
 /* 8 bits per square representing which directions a king can walk to */
 static const byte king_dirs[64] = {
@@ -457,7 +434,7 @@ static void compute_attacks(void)
         memset(&white, 0, sizeof white);
         memset(&black, 0, sizeof black);
 
-        friends = WTM ? &white : &black;
+        friend = WTM ? &white : &black;
         enemy = WTM ? &black : &white;
 
         for (sq=0; sq<64; sq++) {
@@ -763,8 +740,8 @@ static void gen_slides(int fr, byte dirs)
 
 static int cmp_move(const void *ap, const void *bp)
 {
-        struct Move *a = (Move*)ap;
-        struct Move *b = (Move*)bp;
+        const struct move *a = ap;
+        const struct move *b = bp;
 
         if (a->prescore < b->prescore) return -1;
         if (a->prescore > b->prescore) return 1;
@@ -776,7 +753,7 @@ static int test_illegal(int move)
         make_move(move);
         compute_attacks();
         unmake_move();
-        return friends->attack[enemy->king] != 0;
+        return friend->attack[enemy->king] != 0;
 }
 
 static void generate_moves(unsigned treshold)
@@ -901,7 +878,7 @@ static void generate_moves(unsigned treshold)
         /*
          *  generate castling moves
          */
-        if (board[CASTLE] && !enemy->attack[friends->king]) {
+        if (board[CASTLE] && !enemy->attack[friend->king]) {
                 if (WTM && (board[CASTLE] & CASTLE_WHITE_KING) &&
                         !board[F1] && !board[G1] &&
                         !enemy->attack[F1])
@@ -960,7 +937,7 @@ static void print_move_san(int move)
 {
         int fr, to;
         int filex = 0, rankx = 0;
-        struct Move *moves;
+        struct move *moves;
 
         fr = FR(move);
         to = TO(move);
@@ -1008,7 +985,7 @@ static void print_move_san(int move)
                 if (to != TO(move_sp->move)             /* same destination */
                 ||  move == move_sp->move               /* different move */
                 ||  board[fr] != board[FR(move_sp->move)] /* same piece */
-                ||  test_illegal((int)move_sp->move)) {
+                ||  test_illegal(move_sp->move)) {
                         continue;
                 }
                 rankx |= (R(fr) == R(FR(move_sp->move))) + 1;
@@ -1033,13 +1010,13 @@ static void print_move_san(int move)
 check:
         make_move(move);
         compute_attacks();
-        if (enemy->attack[friends->king]) {      /* in check, is mate? */
+        if (enemy->attack[friend->king]) {      /* in check, is mate? */
                 int sign = '#';
                 moves = move_sp;
                 generate_moves(0);
                 while (move_sp > moves) {
                         move_sp--;
-                        if (!test_illegal((int)move_sp->move)) {
+                        if (!test_illegal(move_sp->move)) {
                                 sign = '+';
                                 move_sp = moves;        /* break */
                         }
@@ -1057,7 +1034,7 @@ static int parse_move(char *line, int *num)
 {
         int                     move, matches;
         int                     n = 0;
-        struct Move             *m;
+        struct move             *m;
         char                    *piece = NULL;
         char                    *fr_file = NULL;
         char                    *fr_rank = NULL;
@@ -1082,7 +1059,7 @@ static int parse_move(char *line, int *num)
                 n+=3;
         }
         else {
-                s = strchr(const_cast<char*>("KQRBNP"), line[n]);
+                s = strchr("KQRBNP", line[n]);
                 if (s && *s) {
                         piece = s;
                         n++;
@@ -1090,13 +1067,13 @@ static int parse_move(char *line, int *num)
 
                 /* first square */
 
-                s = strchr(const_cast<char*>("abcdefgh"), line[n]);
+                s = strchr("abcdefgh", line[n]);
                 if (s && *s) {
                         to_file = s;
                         n++;
                 }
 
-                s = strchr(const_cast<char*>("12345678"), line[n]);
+                s = strchr("12345678", line[n]);
                 if (s && *s) {
                         to_rank = s;
                         n++;
@@ -1106,7 +1083,7 @@ static int parse_move(char *line, int *num)
                         n++;
                 }
 
-                s = strchr(const_cast<char*>("abcdefgh"), line[n]);
+                s = strchr("abcdefgh", line[n]);
                 if (s && *s) {
                         fr_file = to_file;
                         fr_rank = to_rank;
@@ -1115,7 +1092,7 @@ static int parse_move(char *line, int *num)
                         n++;
                 }
 
-                s = strchr(const_cast<char*>("12345678"), line[n]);
+                s = strchr("12345678", line[n]);
                 if (s && *s) {
                         to_rank = s;
                         n++;
@@ -1124,7 +1101,7 @@ static int parse_move(char *line, int *num)
                 if (line[n] == '=') {
                         n++;
                 }
-                s = strchr(const_cast<char*>("QRBNqrbn"), line[n]);
+                s = strchr("QRBNqrbn", line[n]);
                 if (s && *s) {
                         prom_piece = s;
                         n++;
@@ -1169,7 +1146,7 @@ static int parse_move(char *line, int *num)
                 }
 
                 /* if so, is it legal? */
-                if (test_illegal((int)move_sp->move)) {
+                if (test_illegal(move_sp->move)) {
                         continue;
                 }
                 /* probably.. */
@@ -1219,9 +1196,9 @@ static int parse_move(char *line, int *num)
 
 static int cmp_bk(const void *ap, const void *bp)
 {
-        const  TTBK::_bk *a = (const TTBK::_bk*)ap;
-        const  TTBK::_bk *b = (const TTBK::_bk*)bp;
-        // struct ttbk
+        const struct bk *a = ap;
+        const struct bk *b = bp;
+
         if (a->hash < b->hash) return -1;
         if (a->hash > b->hash) return 1;
         return (int)a->move - (int)b->move;
@@ -1526,7 +1503,7 @@ static int qsearch(int alpha, int beta)
 {
         int                             best_score;
         int                             score;
-        struct Move                     *moves;
+        struct move                     *moves;
 
         nodes++;
 
@@ -1547,7 +1524,7 @@ static int qsearch(int alpha, int beta)
                 make_move(move);
 
                 compute_attacks();
-                if (friends->attack[enemy->king]) {
+                if (friend->attack[enemy->king]) {
                         unmake_move();
                         continue;
                 }
@@ -1579,9 +1556,9 @@ static int search(int depth, int alpha, int beta)
         int                             best_score = -INF;
         int                             best_move = 0;
         int                             score;
-        struct Move                     *moves;
+        struct move                     *moves;
         int                             incheck = 0;
-        struct TTBK::_tt                       *tt;
+        struct tt                       *tt;
         int                             oldalpha = alpha;
         int                             oldbeta = beta;
         int                             i, count=0;
@@ -1609,7 +1586,7 @@ static int search(int depth, int alpha, int beta)
         }
 
         history[best_move] |= PRESCORE_HASHMOVE;
-        incheck = enemy->attack[friends->king];
+        incheck = enemy->attack[friend->king];
 
         /*
          *  generate moves
@@ -1632,7 +1609,7 @@ static int search(int depth, int alpha, int beta)
                 move = move_sp->move;
                 make_move(move);
                 compute_attacks();
-                if (friends->attack[enemy->king]) {
+                if (friend->attack[enemy->king]) {
                         unmake_move();
                         continue;
                 }
@@ -1703,13 +1680,13 @@ static int root_search(int maxdepth)
         int             move = 0;
         int             alpha, beta;
         unsigned long   node;
-        struct Move     *m;
+        struct move     *m;
 
         nodes = 0;
         compute_piece_square_tables();
 
         generate_moves(0);
-        qsort(move_stack, move_sp-move_stack, sizeof(struct Move), cmp_move);
+        qsort(move_stack, move_sp-move_stack, sizeof(struct move), cmp_move);
 
         alpha = -INF;
         beta = +INF;
@@ -1721,9 +1698,9 @@ static int root_search(int maxdepth)
 
                 node = nodes;
                 while (m < move_sp) {
-                        make_move((int)m->move);
+                        make_move(m->move);
                         compute_attacks();
-                        if (friends->attack[enemy->king] != 0) { /* illegal? */
+                        if (friend->attack[enemy->king] != 0) { /* illegal? */
                                 unmake_move();
                                 *m = *--move_sp; /* drop this move */
                                 continue;
@@ -1746,7 +1723,7 @@ static int root_search(int maxdepth)
                         node = nodes;
 
                         if (score > best_score) {
-                                struct Move tmp;
+                                struct move tmp;
 
                                 best_score = score;
                                 alpha = score;
@@ -1801,7 +1778,7 @@ static void cmd_book(char *dummy)
 
 static void cmd_list_moves(char *dummy)
 {
-        struct Move *m;
+        struct move *m;
         int nmoves = 0;
 
         puts("moves are:");
@@ -1813,8 +1790,8 @@ static void cmd_list_moves(char *dummy)
 
         while (move_sp > m) {
                 --move_sp;
-                if (test_illegal((int)move_sp->move)) continue;
-                print_move_san((int)move_sp->move);
+                if (test_illegal(move_sp->move)) continue;
+                print_move_san(move_sp->move);
                 putchar('\n');
                 nmoves++;
         }
@@ -1919,8 +1896,20 @@ static void cmd_quit(char *dummy)
 {
         exit(0);
 }
-static void cmd_help(char *dummy);//forward declaration
-//struct command mscp_commands[32]; /* forward declaration */
+
+struct command mscp_commands[]; /* forward declaration */
+
+static void cmd_help(char *dummy)
+{
+        struct command *c;
+
+        puts("commands are:");
+        c = mscp_commands;
+        do {
+                printf("%-8s - %s\n", c->name ? c->name : "", c->help);
+        } while (c++->name != NULL);
+}
+
 struct command mscp_commands[] = {
  { "help",      cmd_help,       "show this list of commands"            },
  { "bd",        cmd_bd,         "display board"                         },
@@ -1941,16 +1930,7 @@ struct command mscp_commands[] = {
  { "fen",       cmd_fen,        "setup new position"                    },
  { NULL,        cmd_default,    "enter moves in algebraic notation"     },
 };
-static void cmd_help(char *dummy)
-{
-        struct command *c;
 
-        puts("commands are:");
-        c = mscp_commands;
-        do {
-                printf("%-8s - %s\n", c->name ? c->name : "", c->help);
-        } while (c++->name != NULL);
-}
 /*----------------------------------------------------------------------+
  |      main                                                            |
  +----------------------------------------------------------------------*/
@@ -1961,13 +1941,9 @@ static void catch_sigint(int s)
 }
 
 static char startup_message[] =
-
-       "\n"
-        "This is modified program of MSCP 1.4 (Marcel's Simple Chess Program)\n"
-        "Previous MSCP 1.4 built by Marcel van Kervinck was wirtten in C.\n"
-        "The mscp.cpp written in C++ is built by .\n"
         "\n"
-        "Copyright of MSCP 1.4 (Marcel's Simple Chess Program)\n"
+        "This is MSCP 1.4 (Marcel's Simple Chess Program)\n"
+        "\n"
         "Copyright (C)1998-2003 Marcel van Kervinck\n"
         "This program is distributed under the GNU General Public License.\n"
         "(See file COPYING or http://combinational.com/mscp/ for details.)\n"
@@ -1981,7 +1957,7 @@ int main(void)
         char line[128];
         char name[128];
         int move;
-printf("############");
+
         puts(startup_message);
         signal(SIGINT, catch_sigint);
 
@@ -2045,7 +2021,7 @@ printf("############");
                         if (!move || ply >= 1000) {
                                 printf("game over: ");
                                 compute_attacks();
-                                if (!move && enemy->attack[friends->king] != 0) {
+                                if (!move && enemy->attack[friend->king] != 0) {
                                         puts(WTM ? "0-1" : "1-0");
                                 } else {
                                         puts("1/2-1/2");
@@ -2069,6 +2045,4 @@ printf("############");
 /*----------------------------------------------------------------------+
  |                                                                      |
  +----------------------------------------------------------------------*/
-
-
 
