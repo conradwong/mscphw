@@ -1,54 +1,48 @@
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
-=======
->>>>>>> fy/master
-// BOWEN HUANG     FEI YU
-// ECS 40
-// ASSIGNMENT #2
-// convrt chess program to c++ 
 
-
-<<<<<<< HEAD
-=======
->>>>>>> fy/master
-=======
->>>>>>> upstream/master
->>>>>>> fy/master
 /*----------------------------------------------------------------------+
  |                                                                      |
- |              mscp.cpp- Marcel's Simple Chess Program (c++)                  |
+ |              mscp.c - Marcel's Simple Chess Program                  |
  |                                                                      |
  +----------------------------------------------------------------------+
  |
- | Author:
- | Creation:    10/08/2011
- | Last update: 10/09/2011
+ | Author:      Marcel van Kervinck <marcelk@bitpit.net>
+ | Creation:    11-Jun-1998
+ | Last update: 14-Dec-2003
  | Description: Simple chess playing program
  |
- +-----------------------------------------------------------------------*/
+ +----------------------------------------------------------------------+
+ |    Copyright (C)1998-2003 Marcel van Kervinck                        |
+ |    This program is distributed under the GNU General Public License. |
+ |    See file COPYING or http://bitpit.net/mscp/ for details.          |
+ +----------------------------------------------------------------------*/
 
 char mscp_c_rcsid[] = "@(#)$Id: mscp.c,v 1.18 2003/12/14 15:12:12 marcelk Exp $";
 
-#include <ctype.h>
-#include <errno.h>
-#include <limits.h>
-#include <signal.h>
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
-#include <time.h>
-#include <iostream>
-#include <fstream> //For puts();
+#include <cctype>
+#include <cerrno>
+#include <climits>
+#include <csignal>
+#include <cstdlib>
+#include <cstdio>
+#include <cstring>
+#include <ctime>
 using namespace std;
 
 typedef unsigned char byte;
-#define INF 32000
-#define MAX(a,b) ((a)>(b) ? (a) : (b))
-#define MIN(a,b) ((a)<(b) ? (a) : (b))
+int const INF = 32000;
+//#define INF 32000
 
-#define xisspace(c) isspace((int)(c)) /* Prevent warnings on crappy Solaris */
-#define xisalpha(c) isalpha((int)(c))
+inline int MAX(int const a, int const b){return ((a>b) ? a : b);}
+inline int MIN(int const a, int const b){return ((a<b) ? a : b);}
+//#define MAX(a,b) ((a)>(b) ? (a) : (b))
+//#define MIN(a,b) ((a)<(b) ? (a) : (b))
+
+//inline bool xisspace(char c){return isspace(int a,c);}
+
+inline bool xisspace(char c){return isspace(c);}
+inline bool xisalpha(char c){return isalpha(c);}
+//#define xisspace(c) isspace((int)(c)) /* Prevent warnings on crappy Solaris */
+//#define xisalpha(c) isalpha((int)(c))
 
 /*----------------------------------------------------------------------+
  |      data structures                                                 |
@@ -70,14 +64,20 @@ enum {                  /* 64 squares */
 static byte board[64+3]; /* Board state */
 
 static int ply;         /* Number of half-moves made in game and search */
+
+
 #define WTM (~ply & 1)  /* White-to-move predicate */
 
 static byte castle[64]; /* Which pieces may participate in castling */
-#define CASTLE_WHITE_KING  1
+int const CASTLE_WHITE_KING = 1;
+int const CASTLE_WHITE_QUEEN = 2;
+int const CASTLE_BLACK_KING = 4;
+int const CASTLE_BLACK_QUEEN = 8;
+/*#define CASTLE_WHITE_KING  1
 #define CASTLE_WHITE_QUEEN 2
 #define CASTLE_BLACK_KING  4
 #define CASTLE_BLACK_QUEEN 8
-
+*/
 static int computer[2]; /* Which side is played by the computer */
 static int xboard_mode; /* XBoard protocol, surpresses prompt */
 
@@ -88,33 +88,38 @@ struct side {           /* Attacks */
         int king;
         byte pawns[10];
 };
-static struct side white, black, *friends, *enemy;
+static struct side white, black, *frnd, *enemy;
 
 static unsigned short history[64*64]; /* History-move heuristic counters */
 
-static signed char undo_stack[6*1024], *undo_sp; /* move undo administration */
+static signed char undo_stack[6*1024], *undo_sp; /* Move undo administration */
 static unsigned long hash_stack[1024]; /* History of hashes, for repetition */
 
 static int maxdepth = 4;                /* Maximum search depth */
 
 /* Constants for static move ordering (pre-scores) */
+int const PRESCORE_EQUAL = (10U<<9);
+int const PRESCORE_HASHMOVE = (3U<<14);
+int const PRESCORE_KILLERMOVE = (2U<<14);
+int const PRESCORE_COUNTERMOVE = (1U<<14);
+/*
 #define PRESCORE_EQUAL       (10U<<9)
 #define PRESCORE_HASHMOVE    (3U<<14)
 #define PRESCORE_KILLERMOVE  (2U<<14)
 #define PRESCORE_COUNTERMOVE (1U<<14)
-
+*/
 static const int prescore_piece_value[] = {
         0,
         0, 9<<9, 5<<9, 3<<9, 3<<9, 1<<9,
         0, 9<<9, 5<<9, 3<<9, 3<<9, 1<<9,
 };
 
-struct Move {
+struct move {
         short move;
         unsigned short prescore;
 };
 
-static struct Move move_stack[1024], *move_sp; /* History of moves */
+static struct move move_stack[1024], *move_sp; /* History of moves */
 
 static int piece_square[12][64];        /* Position evaluation tables */
 static unsigned long zobrist[12][64];   /* Hash-key construction */
@@ -125,94 +130,104 @@ static unsigned long zobrist[12][64];   /* Hash-key construction */
  *  so I don't want to waste space on a large table. This also makes MSCP
  *  fit well on 8bit machines.
  */
-#define CORE (2048)
+int const CORE = 2048;
+//#define CORE (2048)
 static long booksize;                   /* Number of opening book entries */
 
+struct transposition_table_entry {                     /* Transposition table entry */
+	unsigned short hash;    /* - Identifies position */ 
+	short move;             /* - Best recorded move */
+	short score;            /* - Score */
+	char flag;              /* - How to interpret score */
+	char depth;             /* - Remaining search depth */
+};
+struct opening_book_entry {                     /* Opening book entry */
+		unsigned long hash;     /* - Identifies position */
+		short move;             /* - Move for this position */
+		unsigned short count;   /* - Frequency */
+};
+
 /* Transposition table and opening book share the same memory */
-static union TTBK{
-        struct _tt {                     /* Transposition table entry */
-                unsigned short hash;    /* - Identifies position */
-                short move;             /* - Best recorded move */
-                short score;            /* - Score */
-                char flag;              /* - How to interpret score */
-                char depth;             /* - Remaining search depth */
-        }tt[CORE];
-        struct _bk {                     /* Opening book entry */
-                unsigned long hash;     /* - Identifies position */
-                short move;             /* - move for this position */
-                unsigned short count;   /* - Frequency */
-        }bk[CORE];
-}core;
-//static TTBK core;
-//static TTBK::_tt tt[CORE];
-//static TTBK::_bk bk[CORE];
-//static union float4
-//{
-//	struct RGBA{
-//		float r;
-//		float g;
-//		float b;
-//		float a;
-//	}rgba[2];
-//	struct XYZW{
-//		float x;
-//		float y;
-//		float z;
-//		float w;
-//	}xyzw[2];
-//}rgbxyz;
-//
-//void foo(){
-//	TTBK::_tt t;
-//
-//	float4::RGBA color;
-//	//color.x = 1.0f;//color.r=1.0f;
-//	color.r = 22.0f;
-//}
-#define TTABLE (core.tt)
-#define BOOK (core.bk)
+static union {
+	transposition_table_entry tt[CORE];
+	opening_book_entry bk[CORE];
+} core;
+
+transposition_table_entry * const TTABLE = core.tt;
+opening_book_entry * const BOOK = core.bk;
+
+//#define TTABLE (core.tt)
+//#define BOOK (core.bk)
 
 /*----------------------------------------------------------------------+
- |      chess defines                                                   |
- +----------------------------------------------------------------------*/
+|      chess defines                                                   |
++----------------------------------------------------------------------*/
 
 enum {
-        EMPTY,
-        WHITE_KING, WHITE_QUEEN, WHITE_ROOK,
-        WHITE_BISHOP, WHITE_KNIGHT, WHITE_PAWN,
-        BLACK_KING, BLACK_QUEEN, BLACK_ROOK,
-        BLACK_BISHOP, BLACK_KNIGHT, BLACK_PAWN
+	EMPTY,
+	WHITE_KING, WHITE_QUEEN, WHITE_ROOK,
+	WHITE_BISHOP, WHITE_KNIGHT, WHITE_PAWN,
+	BLACK_KING, BLACK_QUEEN, BLACK_ROOK,
+	BLACK_BISHOP, BLACK_KNIGHT, BLACK_PAWN
 };
-#define PIECE_COLOR(pc) ((pc) < BLACK_KING) /* White or black */
 
-#define DIR_N (+1)              /* Offset to step one square up (north) */
-#define DIR_E (+8)              /* Offset to step one square right (east) */
+inline int PIECE_COLOR(int pc){return pc < BLACK_KING;}
+//#define PIECE_COLOR(pc) ((pc) < BLACK_KING) /* White or black */
+
+int const DIR_N = +1;
+int const DIR_E = +8;
+//#define DIR_N (+1)              /* Offset to step one square up (north) */
+//#define DIR_E (+8)              /* Offset to step one square right (east) */
 
 enum { FILE_A, FILE_B, FILE_C, FILE_D, FILE_E, FILE_F, FILE_G, FILE_H };
 enum { RANK_1, RANK_2, RANK_3, RANK_4, RANK_5, RANK_6, RANK_7, RANK_8 };
 
-#define RANK2CHAR(r)            ('1'+(r))               /* rank to text */
-#define CHAR2RANK(c)            ((c)-'1')               /* text to rank */
-#define FILE2CHAR(f)            ('a'+(f))               /* file to text */
-#define CHAR2FILE(c)            ((c)-'a')               /* text to file */
-#define PIECE2CHAR(p)           ("-KQRBNPkqrbnp"[p])    /* piece to text */
+inline int RANK2CHAR(int r){ return ('1' + (r));} 
+inline int CHAR2RANK(int c){ return ((c)-'1');} 
+inline int FILE2CHAR(int f){ return ('a'+(f));} 
+inline int CHAR2FILE(int c){ return ((c)-'a');} 
+inline int PIECE2CHAR(int p){ return ("-KQRBNPkqrbnp"[p]);} 
+//#define RANK2CHAR(r)            ('1'+(r))               /* rank to text */
+//#define CHAR2RANK(c)            ((c)-'1')               /* text to rank */
+//#define FILE2CHAR(f)            ('a'+(f))               /* file to text */
+//#define CHAR2FILE(c)            ((c)-'a')               /* text to file */
+//#define PIECE2CHAR(p)           ("-KQRBNPkqrbnp"[p])    /* piece to text */
 
-#define F(square)               ((square) >> 3)         /* file */
-#define R(square)               ((square) & 7)          /* rank */
-#define SQ(f,r)                 (((f) << 3) | (r))      /* compose square */
-#define FLIP(square)            ((square)^7)            /* flip board */
-#define MOVE(fr,to)             (((fr) << 6) | (to))    /* compose move */
-#define FR(move)                (((move) & 07700) >> 6) /* from square */
-#define TO(move)                ((move) & 00077)        /* target square */
-#define SPECIAL                 (1<<12)                 /* for special moves */
+inline int F(int square){return ((square) >> 3);}
+inline int R(int square){return ((square) & 7);}
+inline int SQ(int f,int r){return (((f) << 3) | (r));}
+inline int FLIP(int square){return ((square)^7);}
+inline int MOVE(int fr,int to){return (((fr) << 6) | (to));}
+inline int FR(int move){return (((move) & 07700) >> 6);}
+inline int TO(int move){return ((move) & 00077);}
+int const SPECIAL = (1<<12);
+
+
+//#define F(square)               ((square) >> 3)         /* file */
+//#define R(square)               ((square) & 7)          /* rank */
+//#define SQ(f,r)                 (((f) << 3) | (r))      /* compose square */
+//#define FLIP(square)            ((square)^7)            /* flip board */
+//#define MOVE(fr,to)             (((fr) << 6) | (to))    /* compose move */
+//#define FR(move)                (((move) & 07700) >> 6) /* from square */
+//#define TO(move)                ((move) & 00077)        /* target square */
+//#define SPECIAL                 (1<<12)                 /* for special moves */
 
 struct command {
-        char *name;
-        void (*cmd)(char*);
-        char *help;
+        const char *name;
+        void (*cmd)(const char*);
+        const char *help;
 };
 
 /* attacks */
+int const ATKB_NORTH = 0;
+int const ATKB_NORTHEAST = 1;
+int const ATKB_EAST = 2;
+int const ATKB_SOUTHEAST = 3;
+int const ATKB_SOUTH = 4;
+int const ATKB_SOUTHWEST = 5;
+int const ATKB_WEST = 6;
+int const ATKB_NORTHWEST = 7;
+/*
 #define ATKB_NORTH              0
 #define ATKB_NORTHEAST          1
 #define ATKB_EAST               2
@@ -221,7 +236,17 @@ struct command {
 #define ATKB_SOUTHWEST          5
 #define ATKB_WEST               6
 #define ATKB_NORTHWEST          7
+*/
 
+int const ATK_NORTH = (1 << ATKB_NORTH);
+int const ATK_NORTHEAST = (1 << ATKB_NORTHEAST);
+int const ATK_EAST = (1 << ATKB_EAST);
+int const ATK_SOUTHEAST = (1 << ATKB_SOUTHEAST);
+int const ATK_SOUTH = (1 << ATKB_SOUTH);
+int const ATK_SOUTHWEST = (1 << ATKB_SOUTHWEST);
+int const ATK_WEST = (1 << ATKB_WEST);
+int const ATK_NORTHWEST = (1 << ATKB_NORTHWEST);
+/*
 #define ATK_NORTH               (1 << ATKB_NORTH)
 #define ATK_NORTHEAST           (1 << ATKB_NORTHEAST)
 #define ATK_EAST                (1 << ATKB_EAST)
@@ -230,15 +255,22 @@ struct command {
 #define ATK_SOUTHWEST           (1 << ATKB_SOUTHWEST)
 #define ATK_WEST                (1 << ATKB_WEST)
 #define ATK_NORTHWEST           (1 << ATKB_NORTHWEST)
+*/
 
+int const ATK_ORTHOGONAL = ( ATK_NORTH | ATK_SOUTH | \
+                                  ATK_WEST  | ATK_EAST  );
+int const ATK_DIAGONAL = ( ATK_NORTHEAST | ATK_NORTHWEST | \
+                                  ATK_SOUTHEAST | ATK_SOUTHWEST );
+int const ATK_SLIDER =( ATK_ORTHOGONAL | ATK_DIAGONAL );
+/*
 #define ATK_ORTHOGONAL          ( ATK_NORTH | ATK_SOUTH | \
                                   ATK_WEST  | ATK_EAST  )
 #define ATK_DIAGONAL            ( ATK_NORTHEAST | ATK_NORTHWEST | \
                                   ATK_SOUTHEAST | ATK_SOUTHWEST )
 #define ATK_SLIDER              ( ATK_ORTHOGONAL | ATK_DIAGONAL )
-
+*/
 static signed char king_step[129];      /* Offsets for king moves */
-static signed char knight_jump[129];    /* Offsets for knight jumps */
+static signed char knight_jump[129];    /* Offsets for knight jumps */ 
 
 /* 8 bits per square representing which directions a king can walk to */
 static const byte king_dirs[64] = {
@@ -381,7 +413,7 @@ static void reset(void)
         hash_stack[ply] = compute_hash();
 }
 
-static void setup_board(char *fen)
+static void setup_board(const char *fen)
 {
         int file=FILE_A, rank=RANK_8;
 
@@ -474,7 +506,7 @@ static void compute_attacks(void)
         memset(&white, 0, sizeof white);
         memset(&black, 0, sizeof black);
 
-        friends = WTM ? &white : &black;
+        frnd = WTM ? &white : &black;
         enemy = WTM ? &black : &white;
 
         for (sq=0; sq<64; sq++) {
@@ -780,8 +812,8 @@ static void gen_slides(int fr, byte dirs)
 
 static int cmp_move(const void *ap, const void *bp)
 {
-        struct Move *a = (Move*)ap;
-        struct Move *b = (Move*)bp;
+        const move *a = (const move*)ap;
+        const move *b = (const move*)bp;
 
         if (a->prescore < b->prescore) return -1;
         if (a->prescore > b->prescore) return 1;
@@ -793,7 +825,7 @@ static int test_illegal(int move)
         make_move(move);
         compute_attacks();
         unmake_move();
-        return friends->attack[enemy->king] != 0;
+        return frnd->attack[enemy->king] != 0;
 }
 
 static void generate_moves(unsigned treshold)
@@ -918,7 +950,7 @@ static void generate_moves(unsigned treshold)
         /*
          *  generate castling moves
          */
-        if (board[CASTLE] && !enemy->attack[friends->king]) {
+        if (board[CASTLE] && !enemy->attack[frnd->king]) {
                 if (WTM && (board[CASTLE] & CASTLE_WHITE_KING) &&
                         !board[F1] && !board[G1] &&
                         !enemy->attack[F1])
@@ -977,7 +1009,7 @@ static void print_move_san(int move)
 {
         int fr, to;
         int filex = 0, rankx = 0;
-        struct Move *moves;
+        struct move *moves;
 
         fr = FR(move);
         to = TO(move);
@@ -1025,7 +1057,7 @@ static void print_move_san(int move)
                 if (to != TO(move_sp->move)             /* same destination */
                 ||  move == move_sp->move               /* different move */
                 ||  board[fr] != board[FR(move_sp->move)] /* same piece */
-                ||  test_illegal((int)move_sp->move)) {
+                ||  test_illegal(move_sp->move)) {
                         continue;
                 }
                 rankx |= (R(fr) == R(FR(move_sp->move))) + 1;
@@ -1050,13 +1082,13 @@ static void print_move_san(int move)
 check:
         make_move(move);
         compute_attacks();
-        if (enemy->attack[friends->king]) {      /* in check, is mate? */
+        if (enemy->attack[frnd->king]) {      /* in check, is mate? */
                 int sign = '#';
                 moves = move_sp;
                 generate_moves(0);
                 while (move_sp > moves) {
                         move_sp--;
-                        if (!test_illegal((int)move_sp->move)) {
+                        if (!test_illegal(move_sp->move)) {
                                 sign = '+';
                                 move_sp = moves;        /* break */
                         }
@@ -1070,18 +1102,18 @@ check:
  |      move parser                                                     |
  +----------------------------------------------------------------------*/
 
-static int parse_move(char *line, int *num)
+static int parse_move(const char *line, int *num)
 {
         int                     move, matches;
         int                     n = 0;
-        struct Move             *m;
-        char                    *piece = NULL;
-        char                    *fr_file = NULL;
-        char                    *fr_rank = NULL;
-        char                    *to_file = NULL;
-        char                    *to_rank = NULL;
-        char                    *prom_piece = NULL;
-        char                    *s;
+        struct move             *m;
+        const char              *piece = NULL;
+        const char              *fr_file = NULL;
+        const char              *fr_rank = NULL;
+        const char              *to_file = NULL;
+        const char              *to_rank = NULL;
+        const char              *prom_piece = NULL;
+        const char              *s;
 
         while (xisspace(line[n]))      /* skip white space */
                 n++;
@@ -1089,39 +1121,17 @@ static int parse_move(char *line, int *num)
         if (!strncmp(line+n, "o-o-o", 5)
         ||  !strncmp(line+n, "O-O-O", 5)
         ||  !strncmp(line+n, "0-0-0", 5)) {
-<<<<<<< HEAD
-<<<<<<< HEAD
-                piece = (char*)("K"); fr_file = (char*)("e"); to_file = (char*)("c");
-=======
                 piece = "K"; fr_file = "e"; to_file = "c";
->>>>>>> fy/master
-=======
-                piece = "K"; fr_file = "e"; to_file = "c";
-=======
-                piece = (char*)("K"); fr_file = (char*)("e"); to_file = (char*)("c");
->>>>>>> upstream/master
->>>>>>> fy/master
                 n+=5;
         }
         else if (!strncmp(line+n, "o-o", 3)
         ||  !strncmp(line+n, "O-O", 3)
         ||  !strncmp(line+n, "0-0", 3)) {
-<<<<<<< HEAD
-<<<<<<< HEAD
-                piece = (char*)("K"); fr_file = (char*)("e"); to_file = (char*)("g");
-=======
                 piece = "K"; fr_file = "e"; to_file = "g";
->>>>>>> fy/master
-=======
-                piece = "K"; fr_file = "e"; to_file = "g";
-=======
-                piece = (char*)("K"); fr_file = (char*)("e"); to_file = (char*)("g");
->>>>>>> upstream/master
->>>>>>> fy/master
                 n+=3;
         }
         else {
-                s = strchr(const_cast<char*>("KQRBNP"), line[n]);
+                s = strchr("KQRBNP", line[n]);
                 if (s && *s) {
                         piece = s;
                         n++;
@@ -1129,13 +1139,13 @@ static int parse_move(char *line, int *num)
 
                 /* first square */
 
-                s = strchr(const_cast<char*>("abcdefgh"), line[n]);
+                s = strchr("abcdefgh", line[n]);
                 if (s && *s) {
                         to_file = s;
                         n++;
                 }
 
-                s = strchr(const_cast<char*>("12345678"), line[n]);
+                s = strchr("12345678", line[n]);
                 if (s && *s) {
                         to_rank = s;
                         n++;
@@ -1145,7 +1155,7 @@ static int parse_move(char *line, int *num)
                         n++;
                 }
 
-                s = strchr(const_cast<char*>("abcdefgh"), line[n]);
+                s = strchr("abcdefgh", line[n]);
                 if (s && *s) {
                         fr_file = to_file;
                         fr_rank = to_rank;
@@ -1154,7 +1164,7 @@ static int parse_move(char *line, int *num)
                         n++;
                 }
 
-                s = strchr(const_cast<char*>("12345678"), line[n]);
+                s = strchr("12345678", line[n]);
                 if (s && *s) {
                         to_rank = s;
                         n++;
@@ -1163,7 +1173,7 @@ static int parse_move(char *line, int *num)
                 if (line[n] == '=') {
                         n++;
                 }
-                s = strchr(const_cast<char*>("QRBNqrbn"), line[n]);
+                s = strchr("QRBNqrbn", line[n]);
                 if (s && *s) {
                         prom_piece = s;
                         n++;
@@ -1208,7 +1218,7 @@ static int parse_move(char *line, int *num)
                 }
 
                 /* if so, is it legal? */
-                if (test_illegal((int)move_sp->move)) {
+                if (test_illegal(move_sp->move)) {
                         continue;
                 }
                 /* probably.. */
@@ -1258,9 +1268,9 @@ static int parse_move(char *line, int *num)
 
 static int cmp_bk(const void *ap, const void *bp)
 {
-        const  TTBK::_bk *a = (const TTBK::_bk*)ap;
-        const  TTBK::_bk *b = (const TTBK::_bk*)bp;
-        // struct ttbk
+        const opening_book_entry *a = (const opening_book_entry*)ap;
+        const opening_book_entry *b = (const opening_book_entry*)bp;
+
         if (a->hash < b->hash) return -1;
         if (a->hash > b->hash) return 1;
         return (int)a->move - (int)b->move;
@@ -1283,7 +1293,7 @@ static void compact_book(void)
         booksize = c;
 }
 
-static void load_book(char *filename)
+static void load_book(const char *filename)
 {
         FILE                    *fp;
         char                    line[128], *s;
@@ -1322,18 +1332,7 @@ static int book_move(void)
 {
         int move = 0, sum = 0;
         long x = 0, y, m;
-<<<<<<< HEAD
-<<<<<<< HEAD
-        char *seperator = (char*)"book:";
-=======
-        char *seperator = "book:";
->>>>>>> fy/master
-=======
-        char *seperator = "book:";
-=======
-        char *seperator = (char*)"book:";
->>>>>>> upstream/master
->>>>>>> fy/master
+        const char *seperator = "book:";
         unsigned long hash;
 
         if (!booksize) return 0;
@@ -1345,18 +1344,7 @@ static int book_move(void)
         }
         while (BOOK[x].hash == hash) {
                 printf("%s (%d)", seperator, BOOK[x].count);
-<<<<<<< HEAD
-<<<<<<< HEAD
-                seperator = (char*)",";
-=======
                 seperator = ",";
->>>>>>> fy/master
-=======
-                seperator = ",";
-=======
-                seperator = (char*)",";
->>>>>>> upstream/master
->>>>>>> fy/master
                 print_move_san(BOOK[x].move);
                 compute_hash();
 
@@ -1587,7 +1575,7 @@ static int qsearch(int alpha, int beta)
 {
         int                             best_score;
         int                             score;
-        struct Move                     *moves;
+        struct move                     *moves;
 
         nodes++;
 
@@ -1608,7 +1596,7 @@ static int qsearch(int alpha, int beta)
                 make_move(move);
 
                 compute_attacks();
-                if (friends->attack[enemy->king]) {
+                if (frnd->attack[enemy->king]) {
                         unmake_move();
                         continue;
                 }
@@ -1640,9 +1628,9 @@ static int search(int depth, int alpha, int beta)
         int                             best_score = -INF;
         int                             best_move = 0;
         int                             score;
-        struct Move                     *moves;
+        move                            *moves;
         int                             incheck = 0;
-        struct TTBK::_tt                       *tt;
+        transposition_table_entry      *tt;
         int                             oldalpha = alpha;
         int                             oldbeta = beta;
         int                             i, count=0;
@@ -1670,7 +1658,7 @@ static int search(int depth, int alpha, int beta)
         }
 
         history[best_move] |= PRESCORE_HASHMOVE;
-        incheck = enemy->attack[friends->king];
+        incheck = enemy->attack[frnd->king];
 
         /*
          *  generate moves
@@ -1693,7 +1681,7 @@ static int search(int depth, int alpha, int beta)
                 move = move_sp->move;
                 make_move(move);
                 compute_attacks();
-                if (friends->attack[enemy->king]) {
+                if (frnd->attack[enemy->king]) {
                         unmake_move();
                         continue;
                 }
@@ -1764,13 +1752,13 @@ static int root_search(int maxdepth)
         int             move = 0;
         int             alpha, beta;
         unsigned long   node;
-        struct Move     *m;
+        struct move     *m;
 
         nodes = 0;
         compute_piece_square_tables();
 
         generate_moves(0);
-        qsort(move_stack, move_sp-move_stack, sizeof(struct Move), cmp_move);
+        qsort(move_stack, move_sp-move_stack, sizeof(struct move), cmp_move);
 
         alpha = -INF;
         beta = +INF;
@@ -1782,9 +1770,9 @@ static int root_search(int maxdepth)
 
                 node = nodes;
                 while (m < move_sp) {
-                        make_move((int)m->move);
+                        make_move(m->move);
                         compute_attacks();
-                        if (friends->attack[enemy->king] != 0) { /* illegal? */
+                        if (frnd->attack[enemy->king] != 0) { /* illegal? */
                                 unmake_move();
                                 *m = *--move_sp; /* drop this move */
                                 continue;
@@ -1807,7 +1795,7 @@ static int root_search(int maxdepth)
                         node = nodes;
 
                         if (score > best_score) {
-                                struct Move tmp;
+                                struct move tmp;
 
                                 best_score = score;
                                 alpha = score;
@@ -1842,12 +1830,12 @@ static int root_search(int maxdepth)
  |      commands                                                        |
  +----------------------------------------------------------------------*/
 
-static void cmd_bd(char *dummy /* @unused */)
+static void cmd_bd(const char *dummy /* @unused */)
 {
         print_board();
 }
 
-static void cmd_book(char *dummy)
+static void cmd_book(const char *dummy)
 {
         int move;
 
@@ -1860,9 +1848,9 @@ static void cmd_book(char *dummy)
         }
 }
 
-static void cmd_list_moves(char *dummy)
+static void cmd_list_moves(const char *dummy)
 {
-        struct Move *m;
+        struct move *m;
         int nmoves = 0;
 
         puts("moves are:");
@@ -1874,15 +1862,15 @@ static void cmd_list_moves(char *dummy)
 
         while (move_sp > m) {
                 --move_sp;
-                if (test_illegal((int)move_sp->move)) continue;
-                print_move_san((int)move_sp->move);
+                if (test_illegal(move_sp->move)) continue;
+                print_move_san(move_sp->move);
                 putchar('\n');
                 nmoves++;
         }
         printf("%d move%s\n", nmoves, nmoves==1 ? "" : "s");
 }
 
-static void cmd_default(char *s)
+static void cmd_default(const char *s)
 {
         int move, dummy;
 
@@ -1896,7 +1884,7 @@ static void cmd_default(char *s)
         }
 }
 
-static void cmd_undo(char *dummy)
+static void cmd_undo(const char *dummy)
 {
         if (undo_sp > undo_stack) {
                 unmake_move();
@@ -1907,13 +1895,13 @@ static void cmd_undo(char *dummy)
         }
 }
 
-static void cmd_both(char *dummy)
+static void cmd_both(const char *dummy)
 {
         computer[0] = 1;
         computer[1] = 1;
 }
 
-static void cmd_white(char *dummy)
+static void cmd_white(const char *dummy)
 {
         computer[0] = 0;
         computer[1] = 1;
@@ -1921,7 +1909,7 @@ static void cmd_white(char *dummy)
         reset();
 }
 
-static void cmd_black(char *dummy)
+static void cmd_black(const char *dummy)
 {
         computer[0] = 1;
         computer[1] = 0;
@@ -1929,26 +1917,26 @@ static void cmd_black(char *dummy)
         reset();
 }
 
-static void cmd_force(char *dummy)
+static void cmd_force(const char *dummy)
 {
         computer[0] = 0;
         computer[1] = 0;
 }
 
-static void cmd_go(char *dummy)
+static void cmd_go(const char *dummy)
 {
         computer[!WTM] = 1;
         computer[WTM] = 0;
 }
 
-static void cmd_test(char *s)
+static void cmd_test(const char *s)
 {
         int d = maxdepth;
         sscanf(s, "%*s%d", &d);
         root_search(d);
 }
 
-static void cmd_set_depth(char *s)
+static void cmd_set_depth(const char *s)
 {
         if (1==sscanf(s, "%*s%d", &maxdepth)) {
                 maxdepth = MAX(1, MIN(maxdepth, 8));
@@ -1956,50 +1944,34 @@ static void cmd_set_depth(char *s)
         printf("maximum search depth is %d plies\n", maxdepth);
 }
 
-static void cmd_new(char *dummy)
+static void cmd_new(const char *dummy)
 {
-<<<<<<< HEAD
-<<<<<<< HEAD
-        setup_board((char*)("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -"));
-        load_book((char*)("book.txt"));
-=======
         setup_board("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -");
         load_book("book.txt");
->>>>>>> fy/master
-=======
-        setup_board("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -");
-        load_book("book.txt");
-=======
-        setup_board((char*)("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -"));
-        load_book((char*)("book.txt"));
->>>>>>> upstream/master
->>>>>>> fy/master
         computer[0] = 0;
         computer[1] = 1;
         rnd_seed = time(NULL);
 }
 
-static void cmd_xboard(char *dummy)
+static void cmd_xboard(const char *dummy)
 {
         xboard_mode = 1;
 }
 
-static void cmd_fen(char *s)
+static void cmd_fen(const char *s)
 {
         while (xisalpha(*s)) s++;
         setup_board(s);
 }
 
-static void cmd_quit(char *dummy)
+static void cmd_quit(const char *dummy)
 {
         exit(0);
 }
-static void cmd_help(char *dummy);//forward declaration
-//struct command mscp_commands[32]; /* forward declaration */
+
+static void cmd_help(const char*); // forward declaration
+
 struct command mscp_commands[] = {
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
  { "help",      cmd_help,       "show this list of commands"            },
  { "bd",        cmd_bd,         "display board"                         },
  { "ls",        cmd_list_moves, "list moves"                            },
@@ -2018,52 +1990,9 @@ struct command mscp_commands[] = {
  { "xboard",    cmd_xboard,     "switch to xboard mode"                 },
  { "fen",       cmd_fen,        "setup new position"                    },
  { NULL,        cmd_default,    "enter moves in algebraic notation"     },
-=======
->>>>>>> fy/master
- { (char*)("help"),      cmd_help,       (char*)("show this list of commands")            },
- { (char*)("bd"),        cmd_bd,         (char*)("display board")                         },
- { (char*)("ls"),        cmd_list_moves, (char*)("list moves")                            },
- { (char*)("new"),       cmd_new,        (char*)("new game")                              },
- { (char*)("go"),        cmd_go,         (char*)("computer starts playing")               },
- { (char*)("test"),      cmd_test,       (char*)("search (depth)")                        },
- { (char*)("quit"),      cmd_quit,       (char*)("leave chess program")                   },
- { (char*)("sd"),        cmd_set_depth,  (char*)("set maximum search depth (plies)")      },
- { (char*)("both"),      cmd_both,       (char*)("computer plays both sides")             },
- { (char*)("force"),     cmd_force,      (char*)("computer plays neither side")           },
- { (char*)("white"),     cmd_white,      (char*)("set computer to play white")            },
- { (char*)("black"),     cmd_black,      (char*)("set computer to play black")            },
- { (char*)("book"),      cmd_book,       (char*)("lookup current position in book")       },
- { (char*)("undo"),      cmd_undo,       (char*)("undo move")                             },
- { (char*)("quit"),      cmd_quit,       (char*)("leave chess program")                   },
- { (char*)("xboard"),    cmd_xboard,     (char*)("switch to xboard mode")                 },
- { (char*)("fen"),       cmd_fen,        (char*)("setup new position")                    },
- {          NULL,        cmd_default,    (char*)("enter moves in algebraic notation")     },
-<<<<<<< HEAD
-=======
- { "help",      cmd_help,       "show this list of commands"            },
- { "bd",        cmd_bd,         "display board"                         },
- { "ls",        cmd_list_moves, "list moves"                            },
- { "new",       cmd_new,        "new game"                              },
- { "go",        cmd_go,         "computer starts playing"               },
- { "test",      cmd_test,       "search (depth)"                        },
- { "quit",      cmd_quit,       "leave chess program"                   },
- { "sd",        cmd_set_depth,  "set maximum search depth (plies)"      },
- { "both",      cmd_both,       "computer plays both sides"             },
- { "force",     cmd_force,      "computer plays neither side"           },
- { "white",     cmd_white,      "set computer to play white"            },
- { "black",     cmd_black,      "set computer to play black"            },
- { "book",      cmd_book,       "lookup current position in book"       },
- { "undo",      cmd_undo,       "undo move"                             },
- { "quit",      cmd_quit,       "leave chess program"                   },
- { "xboard",    cmd_xboard,     "switch to xboard mode"                 },
- { "fen",       cmd_fen,        "setup new position"                    },
- { NULL,        cmd_default,    "enter moves in algebraic notation"     },
->>>>>>> fy/master
-=======
->>>>>>> upstream/master
->>>>>>> fy/master
 };
-static void cmd_help(char *dummy)
+
+static void cmd_help(const char *dummy)
 {
         struct command *c;
 
@@ -2073,6 +2002,7 @@ static void cmd_help(char *dummy)
                 printf("%-8s - %s\n", c->name ? c->name : "", c->help);
         } while (c++->name != NULL);
 }
+
 /*----------------------------------------------------------------------+
  |      main                                                            |
  +----------------------------------------------------------------------*/
@@ -2083,13 +2013,9 @@ static void catch_sigint(int s)
 }
 
 static char startup_message[] =
-
-       "\n"
-        "This is modified program of MSCP 1.4 (Marcel's Simple Chess Program)\n"
-        "Previous MSCP 1.4 built by Marcel van Kervinck was wirtten in C.\n"
-        "The mscp.cpp written in C++ is built by .\n"
         "\n"
-        "Copyright of MSCP 1.4 (Marcel's Simple Chess Program)\n"
+        "This is MSCP 1.4 (Marcel's Simple Chess Program)\n"
+        "\n"
         "Copyright (C)1998-2003 Marcel van Kervinck\n"
         "This program is distributed under the GNU General Public License.\n"
         "(See file COPYING or http://combinational.com/mscp/ for details.)\n"
@@ -2098,38 +2024,16 @@ static char startup_message[] =
 
 int main(void)
 {
-<<<<<<< HEAD
-<<<<<<< HEAD
-        int unsigned i;
-=======
-        int i;
->>>>>>> fy/master
-=======
-        int i;
-=======
-        int unsigned i;
->>>>>>> upstream/master
->>>>>>> fy/master
+        unsigned int i;
         int cmd;
         char line[128];
         char name[128];
         int move;
-printf("############");
+
         puts(startup_message);
         signal(SIGINT, catch_sigint);
 
-<<<<<<< HEAD
-<<<<<<< HEAD
-        for (i=0; i<sizeof((zobrist)); i++) {
-=======
         for (i=0; i<sizeof(zobrist); i++) {
->>>>>>> fy/master
-=======
-        for (i=0; i<sizeof(zobrist); i++) {
-=======
-        for (i=0; i<sizeof((zobrist)); i++) {
->>>>>>> upstream/master
->>>>>>> fy/master
                 ( (byte*)zobrist )[i] = rnd() & 0xff;
         }
 
@@ -2189,7 +2093,7 @@ printf("############");
                         if (!move || ply >= 1000) {
                                 printf("game over: ");
                                 compute_attacks();
-                                if (!move && enemy->attack[friends->king] != 0) {
+                                if (!move && enemy->attack[frnd->king] != 0) {
                                         puts(WTM ? "0-1" : "1-0");
                                 } else {
                                         puts("1/2-1/2");
@@ -2213,6 +2117,4 @@ printf("############");
 /*----------------------------------------------------------------------+
  |                                                                      |
  +----------------------------------------------------------------------*/
-
-
 
