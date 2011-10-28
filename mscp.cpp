@@ -1,3 +1,4 @@
+// BOWEN HUANG 		FEI YU	
 
 /*----------------------------------------------------------------------+
  |                                                                      |
@@ -26,6 +27,8 @@ char mscp_c_rcsid[] = "@(#)$Id: mscp.c,v 1.18 2003/12/14 15:12:12 marcelk Exp $"
 #include <cstdio>
 #include <cstring>
 #include <ctime>
+#include <iostream>
+#include <iomanip>
 using namespace std;
 
 typedef unsigned char byte;
@@ -37,10 +40,10 @@ inline int MIN(int const a, int const b){return ((a<b) ? a : b);}
 //#define MAX(a,b) ((a)>(b) ? (a) : (b))
 //#define MIN(a,b) ((a)<(b) ? (a) : (b))
 
-//inline bool xisspace(char c){return isspace(int a,c);}
 
-inline bool xisspace(char c){return isspace(c);}
-inline bool xisalpha(char c){return isalpha(c);}
+
+inline bool xisspace(char const c){return isspace((int)(c));}
+inline bool xisalpha(char const c){return isalpha((int)(c));}
 //#define xisspace(c) isspace((int)(c)) /* Prevent warnings on crappy Solaris */
 //#define xisalpha(c) isalpha((int)(c))
 
@@ -65,8 +68,8 @@ static byte board[64+3]; /* Board state */
 
 static int ply;         /* Number of half-moves made in game and search */
 
-
-#define WTM (~ply & 1)  /* White-to-move predicate */
+inline int WTM(){return (~ply & 1);}
+//#define WTM (~ply & 1)  /* White-to-move predicate */
 
 static byte castle[64]; /* Which pieces may participate in castling */
 int const CASTLE_WHITE_KING = 1;
@@ -102,6 +105,7 @@ int const PRESCORE_EQUAL = (10U<<9);
 int const PRESCORE_HASHMOVE = (3U<<14);
 int const PRESCORE_KILLERMOVE = (2U<<14);
 int const PRESCORE_COUNTERMOVE = (1U<<14);
+
 /*
 #define PRESCORE_EQUAL       (10U<<9)
 #define PRESCORE_HASHMOVE    (3U<<14)
@@ -184,7 +188,7 @@ enum { RANK_1, RANK_2, RANK_3, RANK_4, RANK_5, RANK_6, RANK_7, RANK_8 };
 
 inline int RANK2CHAR(int r){ return ('1' + (r));} 
 inline int CHAR2RANK(int c){ return ((c)-'1');} 
-inline int FILE2CHAR(int f){ return ('a'+(f));} 
+inline char FILE2CHAR(int f){ return ('a'+(f));} 
 inline int CHAR2FILE(int c){ return ((c)-'a');} 
 inline int PIECE2CHAR(int p){ return ("-KQRBNPkqrbnp"[p]);} 
 //#define RANK2CHAR(r)            ('1'+(r))               /* rank to text */
@@ -340,20 +344,28 @@ static void print_board(void)
         int file, rank;
 
         for (rank=RANK_8; rank>=RANK_1; rank--) {
-                printf("%d ", 1+rank);
+		cout << 1+rank << " ";                
+		//printf("%d ", 1+rank);
                 for (file=FILE_A; file<=FILE_H; file++) {
                         putchar(' ');
                         putchar(PIECE2CHAR(board[SQ(file,rank)]));
                 }
                 putchar('\n');
         }
-        printf("   a b c d e f g h\n%d. %s to move. %s%s%s%s ",
-                1+ply/2, WTM ? "White" : "Black",
+cout << "   a b c d e f g h\n" << 1+ply/2 << ". " ;
+        cout << (WTM() ? "White" : "Black") << " to move. ";
+        cout << (board[CASTLE] & CASTLE_WHITE_KING ? "K" : "");
+        cout << (board[CASTLE] & CASTLE_WHITE_QUEEN ? "Q" : "");
+        cout << (board[CASTLE] & CASTLE_BLACK_KING ? "k" : "");
+        cout << (board[CASTLE] & CASTLE_BLACK_QUEEN ? "q" : "") << " ";
+	/*       
+	printf("   a b c d e f g h\n%d. %s to move. %s%s%s%s ",
+                1+ply/2, WTM() ? "White" : "Black",
                 board[CASTLE] & CASTLE_WHITE_KING ? "K" : "",
                 board[CASTLE] & CASTLE_WHITE_QUEEN ? "Q" : "",
                 board[CASTLE] & CASTLE_BLACK_KING ? "k" : "",
                 board[CASTLE] & CASTLE_BLACK_QUEEN ? "q" : ""
-        );
+        );*/
         if (board[EP]) print_square(board[EP]);
         putchar('\n');
 }
@@ -368,7 +380,8 @@ static int readline(char *line, int size, FILE *fp)
                 c = fgetc(fp);
                 if (c == EOF) {
                         if (!errno) return -1;
-                        printf("error: %s\n", strerror(errno));
+			//cout << "error: " << strerror(errno) << endl;	                        
+			printf("error: %s\n", strerror(errno));
                         errno = 0;
                         continue;
                 }
@@ -399,7 +412,7 @@ static unsigned long compute_hash(void)
                         hash ^= zobrist[board[sq]-1][sq];
                 }
         }
-        return hash ^ WTM;
+        return hash ^ WTM();
 }
 
 /*----------------------------------------------------------------------+
@@ -465,7 +478,7 @@ static void setup_board(const char *fen)
                 case 'q': board[CASTLE] |= CASTLE_BLACK_QUEEN; break;
                 case 'a': case 'b': case 'c': case 'd':
                 case 'e': case 'f': case 'g': case 'h':
-                        board[EP] = SQ(CHAR2FILE(*fen),WTM?RANK_5:RANK_4);
+                        board[EP] = SQ(CHAR2FILE(*fen),WTM()?RANK_5:RANK_4);
                         break;
                 default:
                         break;
@@ -506,8 +519,8 @@ static void compute_attacks(void)
         memset(&white, 0, sizeof white);
         memset(&black, 0, sizeof black);
 
-        frnd = WTM ? &white : &black;
-        enemy = WTM ? &black : &white;
+        frnd = WTM() ? &white : &black;
+        enemy = WTM() ? &black : &white;
 
         for (sq=0; sq<64; sq++) {
                 pc = board[sq];
@@ -740,7 +753,7 @@ static int push_move(int fr, int to)
         }
 
         /* does the destination square look safe? */
-        if (WTM) {
+        if (WTM()) {
                 if (black.attack[to] != 0) { /* defended */
                         prescore -= prescore_piece_value[board[fr]];
                 }
@@ -800,7 +813,7 @@ static void gen_slides(int fr, byte dirs)
                 do {
                         to += vector;
                         if (board[to] != EMPTY) {
-                                if (PIECE_COLOR(board[to]) != WTM) {
+                                if (PIECE_COLOR(board[to]) != WTM()) {
                                         push_move(fr, to);
                                 }
                                 break;
@@ -838,7 +851,7 @@ static void generate_moves(unsigned treshold)
 
         for (fr=0; fr<64; fr++) {
                 pc = board[fr];
-                if (!pc || PIECE_COLOR(pc) != WTM) continue;
+                if (!pc || PIECE_COLOR(pc) != WTM()) continue;
 
                 /*
                  *  generate moves for this piece
@@ -853,7 +866,7 @@ static void generate_moves(unsigned treshold)
                                 dir &= dirs;
                                 to = fr+king_step[dir];
                                 if (board[to] != EMPTY &&
-                                    PIECE_COLOR(board[to]) == WTM) continue;
+                                    PIECE_COLOR(board[to]) == WTM()) continue;
                                 push_move(fr, to);
                         } while (dirs -= dir);
                         break;
@@ -882,7 +895,7 @@ static void generate_moves(unsigned treshold)
                                 dir &= dirs;
                                 to = fr+knight_jump[dir];
                                 if (board[to] != EMPTY &&
-                                    PIECE_COLOR(board[to]) == WTM) continue;
+                                    PIECE_COLOR(board[to]) == WTM()) continue;
                                 push_move(fr, to);
                         } while (dirs -= dir);
                         break;
@@ -951,25 +964,25 @@ static void generate_moves(unsigned treshold)
          *  generate castling moves
          */
         if (board[CASTLE] && !enemy->attack[frnd->king]) {
-                if (WTM && (board[CASTLE] & CASTLE_WHITE_KING) &&
+                if (WTM() && (board[CASTLE] & CASTLE_WHITE_KING) &&
                         !board[F1] && !board[G1] &&
                         !enemy->attack[F1])
                 {
                         push_special_move(E1, G1);
                 }
-                if (WTM && (board[CASTLE] & CASTLE_WHITE_QUEEN) &&
+                if (WTM() && (board[CASTLE] & CASTLE_WHITE_QUEEN) &&
                         !board[D1] && !board[C1] && !board[B1] &&
                         !enemy->attack[D1])
                 {
                         push_special_move(E1, C1);
                 }
-                if (!WTM && (board[CASTLE] & CASTLE_BLACK_KING) &&
+                if (!WTM() && (board[CASTLE] & CASTLE_BLACK_KING) &&
                         !board[F8] && !board[G8] &&
                         !enemy->attack[F8])
                 {
                         push_special_move(E8, G8);
                 }
-                if (!WTM && (board[CASTLE] & CASTLE_BLACK_QUEEN) &&
+                if (!WTM() && (board[CASTLE] & CASTLE_BLACK_QUEEN) &&
                         !board[D8] && !board[C8] && !board[B8] &&
                         !enemy->attack[D8])
                 {
@@ -983,7 +996,7 @@ static void generate_moves(unsigned treshold)
         if (board[EP]) {
                 int ep = board[EP];
 
-                if (WTM) {
+                if (WTM()) {
                         if (F(ep) != FILE_A && board[ep-DIR_E] == WHITE_PAWN) {
                                 if (push_move(ep-DIR_E, ep+DIR_N))
                                         move_sp[-1].move |= SPECIAL;
@@ -1028,7 +1041,8 @@ static void print_move_san(int move)
                  *  pawn moves are a bit special
                  */
                 if (F(fr) != F(to)) {
-                        printf("%cx", FILE2CHAR(F(fr)));
+			cout << FILE2CHAR(F(fr))<<"x";                        
+			//printf("%cx", FILE2CHAR(F(fr)));
                 }
                 print_square(to);
                 /*
@@ -1303,7 +1317,8 @@ static void load_book(const char *filename)
 
         fp = fopen(filename, "r");
         if (!fp) {
-                printf("no opening book: %s\n", filename);
+		cout << "no opening book: " << filename << endl;                
+		//printf("no opening book: %s\n", filename);
                 exit(EXIT_FAILURE);     /* no mercy */
         }
         while (readline(line, sizeof(line), fp) >= 0) {
@@ -1343,7 +1358,8 @@ static int book_move(void)
                 if (hash < BOOK[m].hash) { y=m; } else { x=m; }
         }
         while (BOOK[x].hash == hash) {
-                printf("%s (%d)", seperator, BOOK[x].count);
+		cout << seperator << " (" << BOOK[x].count << ")";                
+		//printf("%s (%d)", seperator, BOOK[x].count);
                 seperator = ",";
                 print_move_san(BOOK[x].move);
                 compute_hash();
@@ -1564,7 +1580,7 @@ static int evaluate(void)
         /* some noise to randomize play */
         score += (hash_stack[ply] ^ rnd_seed) % 17 - 8;
 
-        return WTM ? score : -score;
+        return WTM() ? score : -score;
 }
 
 /*----------------------------------------------------------------------+
@@ -1812,8 +1828,18 @@ static int root_search(int maxdepth)
                 if (move_sp-move_stack <= 1) {
                         break; /* just one move to play */
                 }
-
-                printf(" %5lu %3d %+1.2f ", nodes, depth, best_score / 100.0);
+	////////////////////////////////////////////////////////////////////////////////////////	
+		cout << " " <<setw(5)<< nodes ;
+		cout<< " " <<setw(3)<< depth;
+		cout<< " ";		
+		cout.setf(ios::showpos);
+		cout.setf(ios::fixed);		
+		cout<<setw(1)<<setprecision(2)<< best_score / 100.0 ;
+		
+		cout.unsetf(ios::showpos);
+		cout.unsetf(ios::fixed);
+		cout<< " ";
+                //printf(" %5lu %3d %+1.2f ", nodes, depth, best_score / 100.0);
                 print_move_san(move);
                 puts("");
 
@@ -1838,8 +1864,8 @@ static void cmd_bd(const char *dummy /* @unused */)
 static void cmd_book(const char *dummy)
 {
         int move;
-
-        printf("%ld moves in book\n", booksize);
+	cout << booksize << " moves in book\n";
+        //printf("%ld moves in book\n", booksize);
 
         move = book_move();
         if (move) {
@@ -1867,7 +1893,8 @@ static void cmd_list_moves(const char *dummy)
                 putchar('\n');
                 nmoves++;
         }
-        printf("%d move%s\n", nmoves, nmoves==1 ? "" : "s");
+        //printf("%d move%s\n", nmoves, nmoves==1 ? "" : "s");
+	cout << nmoves << " move" << (nmoves==1 ? "" : "s") << "\n";
 }
 
 static void cmd_default(const char *s)
@@ -1880,7 +1907,8 @@ static void cmd_default(const char *s)
                 hash_stack[ply] = compute_hash();
                 print_board();
         } else {
-                printf("no such move or command: %s\n", s);
+                //printf("no such move or command: %s\n", s);
+		cout << "no such move or command: " << s << endl;
         }
 }
 
@@ -1925,8 +1953,8 @@ static void cmd_force(const char *dummy)
 
 static void cmd_go(const char *dummy)
 {
-        computer[!WTM] = 1;
-        computer[WTM] = 0;
+        computer[!WTM()] = 1;
+        computer[WTM()] = 0;
 }
 
 static void cmd_test(const char *s)
@@ -1941,7 +1969,8 @@ static void cmd_set_depth(const char *s)
         if (1==sscanf(s, "%*s%d", &maxdepth)) {
                 maxdepth = MAX(1, MIN(maxdepth, 8));
         }
-        printf("maximum search depth is %d plies\n", maxdepth);
+        //printf("maximum search depth is %d plies\n", maxdepth);
+	cout << "maximum search depth is " << maxdepth << " plies\n";
 }
 
 static void cmd_new(const char *dummy)
@@ -1999,7 +2028,9 @@ static void cmd_help(const char *dummy)
         puts("commands are:");
         c = mscp_commands;
         do {
-                printf("%-8s - %s\n", c->name ? c->name : "", c->help);
+		cout <<left<<setw(8)<<(c->name ? c->name : "");
+		cout <<setiosflags(ios::right)<< " - " << c->help << "\n";                
+		//printf("%-8s - %s\n", c->name ? c->name : "", c->help);
         } while (c++->name != NULL);
 }
 
@@ -2082,7 +2113,7 @@ int main(void)
                 }
                 mscp_commands[cmd].cmd(line);
 
-                while (computer[!WTM]) {
+                while (computer[!WTM()]) {
                         move = book_move();
                         if (!move) {
                                 booksize = 0;
@@ -2091,17 +2122,19 @@ int main(void)
                                 move = root_search(maxdepth);
                         }
                         if (!move || ply >= 1000) {
-                                printf("game over: ");
+				cout << "game over: ";                               
+			  	// printf("game over: ");
                                 compute_attacks();
                                 if (!move && enemy->attack[frnd->king] != 0) {
-                                        puts(WTM ? "0-1" : "1-0");
+                                        puts(WTM() ? "0-1" : "1-0");
                                 } else {
                                         puts("1/2-1/2");
                                 }
                                 computer[0] = computer[1] = 0;
                                 break;
                         }
-                        printf("%d. ... ", 1+ply/2);
+			cout << 1+ply/2 << ". ... ";                        
+			//printf("%d. ... ", 1+ply/2);
                         print_move_long(move);
                         putc('\n', stdout);
 
